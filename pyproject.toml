@@ -1,0 +1,85 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "corbelity-model-client"
+version = "0.1.0"
+description = "Provider-agnostic, traced client for text, image and speech model APIs."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Corbelity LLC" }]
+keywords = [
+    "llm", "anthropic", "openrouter", "ollama", "huggingface",
+    "multimodal", "inference", "tracing", "observability",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+
+# The core package has NO required runtime dependencies. Every provider SDK is an extra
+# and is imported lazily (see client.load_sdk), so installing this package to talk to one
+# provider never drags in the other three -- and a bad release of any one SDK cannot make
+# `import corbelity.model_client` fail.
+dependencies = []
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+openrouter = ["openai>=1.50"]
+ollama = ["ollama>=0.4"]
+# Pillow is not optional for HuggingFace: text_to_image returns a PIL.Image that the
+# provider re-encodes to PNG bytes so callers never need Pillow themselves.
+huggingface = ["huggingface-hub>=0.26", "pillow>=10.0"]
+all = [
+    "corbelity-model-client[anthropic]",
+    "corbelity-model-client[openrouter]",
+    "corbelity-model-client[ollama]",
+    "corbelity-model-client[huggingface]",
+]
+
+[project.urls]
+Homepage = "https://github.com/Corbelity/model-client"
+Source = "https://github.com/Corbelity/model-client"
+Issues = "https://github.com/Corbelity/model-client/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.hatch.build.targets.wheel]
+# `corbelity` is an implicit namespace package (PEP 420) with no __init__.py, so future
+# siblings -- corbelity.trace, corbelity.agents -- install alongside this one without
+# either package shadowing the other.
+packages = ["src/corbelity"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Live provider calls cost money and need credentials: excluded by default, run with
+#   pytest -m live
+markers = ["live: hits a real provider endpoint (requires API keys)"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["corbelity.model_client"]
+strict = true
+# The provider SDKs are optional installs, so mypy will not always find them.
+ignore_missing_imports = true

@@ -1,7 +1,7 @@
 """OpenRouter, via the OpenAI SDK's chat-completions interface."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..client import ModelClient, get_field, load_sdk
 from ..media import ImageInput, LLMResult
@@ -22,10 +22,10 @@ class OpenRouterClient(ModelClient["OpenAI"]):
 
     def _build_client(self) -> OpenAI:
         sdk = load_sdk("openai", self.SPEC.extra)
-        return sdk.OpenAI(  # type: ignore[no-any-return]
+        return cast("OpenAI", sdk.OpenAI(
             base_url=self._resolve_base_url(),
             api_key=self._resolve_key(),
-        )
+        ))
 
     def _invoke(self, system: str, user: str, history: tuple[Message, ...],
                 images: tuple[ImageInput, ...]) -> LLMResult:

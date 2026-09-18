@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..client import ModelClient, get_field, load_sdk
 from ..media import IMAGE, SOUND, TEXT, ImageInput, LLMResult, MediaResult, sniff_audio_mime
@@ -28,7 +28,7 @@ class HuggingFaceClient(ModelClient["InferenceClient"]):
 
     def _build_client(self) -> InferenceClient:
         sdk = load_sdk("huggingface_hub", self.SPEC.extra)
-        return sdk.InferenceClient(token=self._resolve_key())  # type: ignore[no-any-return]
+        return cast("InferenceClient", sdk.InferenceClient(token=self._resolve_key()))
 
     def _call(self, modality: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """huggingface_hub raises a BARE StopIteration when no inference provider serves a

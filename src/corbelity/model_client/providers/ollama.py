@@ -5,7 +5,7 @@ request and response handling lives once in the shared base below.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..client import ModelClient, get_field, load_sdk
 from ..media import ImageInput, LLMResult
@@ -87,7 +87,7 @@ class OllamaLocalClient(_OllamaClient):
         # exactly the kind of environment-dependent error that is miserable to reproduce.
         host = self._resolve_base_url()
         sdk = load_sdk("ollama", self.SPEC.extra)
-        return sdk.Client(host=strip_v1(host or ""))  # type: ignore[no-any-return]
+        return cast("Client", sdk.Client(host=strip_v1(host or "")))
 
 
 class OllamaCloudClient(_OllamaClient):
@@ -100,7 +100,7 @@ class OllamaCloudClient(_OllamaClient):
         host = self._resolve_base_url()
         key = self._resolve_key()
         sdk = load_sdk("ollama", self.SPEC.extra)
-        return sdk.Client(  # type: ignore[no-any-return]
+        return cast("Client", sdk.Client(
             host=strip_v1(host or ""),
             headers={"Authorization": f"Bearer {key}"},
-        )
+        ))

@@ -1,7 +1,7 @@
 """Anthropic, direct API."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..catalog import load_catalog
 from ..client import ModelClient, get_field, load_sdk
@@ -42,7 +42,11 @@ class AnthropicClient(ModelClient["Anthropic"]):
             self._model, self._temperature, self._max_tokens,
         )
         sdk = load_sdk("anthropic", self.SPEC.extra)
-        return sdk.Anthropic(api_key=self._resolve_key())  # type: ignore[no-any-return]
+        # cast rather than `# type: ignore[no-any-return]`: with the SDK installed the call
+        # returns a typed object and the ignore is REQUIRED; without it the expression is
+        # already Any and the same ignore is reported as UNUSED. CI type-checks both
+        # environments, so only a construct that is valid in both will pass.
+        return cast("Anthropic", sdk.Anthropic(api_key=self._resolve_key()))
 
     def _invoke(self, system: str, user: str, history: tuple[Message, ...],
                 images: tuple[ImageInput, ...]) -> LLMResult:

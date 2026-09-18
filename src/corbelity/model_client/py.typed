@@ -1,0 +1,2 @@
+# PEP 561 marker: this package ships inline type annotations, so type checkers in
+# downstream projects will use them instead of treating the package as untyped.

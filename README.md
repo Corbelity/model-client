@@ -19,13 +19,18 @@ print(client.complete("You are terse.", "Name three prime numbers."))
 
 ## Why I built this
 
-<!-- TODO(steve): write this section.
-     Worth covering: what you were building when you needed it (multi-provider
-     evaluation), why the existing abstractions didn't fit, and what changed once every
-     call was traced the same way. Keep it first-person — it is the part of this README
-     nobody else could write. -->
+     Over the past six months I built a series of agents, tools, and test harnesses against AI models.
+     In every one of them I wanted to run the same code against different models, local ones included,
+     and compare what came back.
 
-_Placeholder._
+     That started as a config-driven switcher to paper over the differences in how each provider wants
+     to be called. From there it became a pluggable client, interchangeable at runtime and instrumented
+     so that every call produced the same log line and the same trace record no matter which provider
+     answered. I was copying it into each new project.
+
+     This is that code, pulled out once so it can be reused and maintained in one place. If you're
+     evaluating models across providers, or want the same code path to run against a local Ollama
+     box and a cloud API, it may save you the same work.
 
 ---
 

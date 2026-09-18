@@ -333,7 +333,7 @@ class ModelClient[ClientT](ABC):
                 "Model call %s/%s returned an EMPTY response (finish=%s).",
                 self.SPEC.name, self._model, result.finish_reason,
             )
-        elif result.finish_reason and str(result.finish_reason).lower() in INCOMPLETE_FINISH_REASONS:
+        elif str(result.finish_reason or "").lower() in INCOMPLETE_FINISH_REASONS:
             self._logger.warning(
                 "Model call %s/%s did not finish cleanly (finish=%s) -- the response may "
                 "be truncated or filtered.",

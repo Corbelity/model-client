@@ -15,7 +15,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Full history: the base and head commits both have to be present to diff them.
           fetch-depth: 0
@@ -69,10 +69,10 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -82,6 +82,11 @@ jobs:
       # Installed WITHOUT provider extras on purpose: this proves the package imports and
       # its non-network behaviour works with zero provider SDKs present, which is the
       # promise the optional-dependencies make.
+      #
+      # It also type-checks in that environment, which is stricter than it looks: a
+      # `# type: ignore` needed WITH an SDK installed is reported as unused WITHOUT it.
+      # Provider client construction uses cast() for exactly this reason -- see the note
+      # in providers/anthropic.py.
       - name: Install (no provider extras)
         run: uv sync --group dev
 
@@ -97,12 +102,18 @@ jobs:
   test-with-extras:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install with every provider extra
         run: uv sync --group dev --extra all
+      - name: Lint
+        run: uv run ruff check .
+      # Type-checked here too: with the SDKs present, mypy sees their real types rather
+      # than Any, so this job catches a different class of error than the one above.
+      - name: Type check
+        run: uv run mypy
       # No credentials in CI, so live calls stay excluded (see the pytest markers). This
       # job exists to catch an SDK whose API drifted away from what the providers expect.
       - name: Test
@@ -111,13 +122,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
       - name: Build sdist and wheel
         run: uv build
       - name: Check metadata
         run: uvx twine check dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/

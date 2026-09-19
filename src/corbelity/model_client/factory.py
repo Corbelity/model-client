@@ -8,8 +8,11 @@ not even import the provider module.
 """
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from typing import Any
 
+from .catalog import ModelCatalog, load_catalog
 from .client import ModelClient
 from .config import ModelConfig, get_default_config
 from .registry import DEFAULT_REGISTRY, ProviderSpec
@@ -59,3 +62,60 @@ def make_model_client(service: str | None = None, **kwargs: Any) -> ModelClient[
     """
     config = kwargs.get("config")
     return client_class(service, config=config)(**kwargs)
+
+
+def available_services(*, env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """The services whose credentials and endpoints are actually present in the
+    environment -- what you can call right now, as opposed to what exists.
+
+    Intended for building a `ModelConfig(services=...)` allow-list without hand-listing
+    providers:
+
+        config = ModelConfig(services=available_services())
+
+    This is NOT applied automatically. Silently hiding a provider because an environment
+    variable is missing is the kind of behaviour that produces "why is my model gone?" --
+    so filtering stays an explicit choice, and this function only supplies the answer.
+
+    Presence, not validity: it checks that a variable is set, never that the credential
+    works. Verifying would mean a network call per provider, and a provider that is down
+    at startup is not a provider you should stop offering.
+
+    `env` is injectable for tests.
+    """
+    source = os.environ if env is None else env
+
+    def _has(names: tuple[str, ...]) -> bool:
+        return any(source.get(name, "").strip() for name in names)
+
+    found = []
+    for name in DEFAULT_REGISTRY.known():
+        spec = DEFAULT_REGISTRY.get(name)
+        if spec.requires_key and not _has(spec.key_env):
+            continue
+        # A provider with no usable default endpoint (local Ollama) is not available
+        # until its host is configured, credential or no credential.
+        if spec.requires_base_url and not _has(spec.base_url_env):
+            continue
+        found.append(name)
+    return tuple(found)
+
+
+def catalog_for(config: ModelConfig | None = None) -> ModelCatalog:
+    """The model catalog as this configuration wants it shown: the built-in catalog, with
+    any user catalog merged over it, narrowed to `config.services` when that is set.
+
+    This is the listing path -- what a dropdown should offer. It is deliberately NOT what
+    provider code reads: `_accepts_sampling_params()` loads the catalog unfiltered,
+    because a capability flag has to be found for a model whatever a UI happens to be
+    listing. Narrowing what you show must never change how a call behaves.
+    """
+    settings = config if config is not None else get_default_config()
+    catalog = load_catalog(settings.catalog_path)
+    if settings.services is None:
+        return catalog
+    # Fold aliases so ("hf",) matches entries whose service is "huggingface". An unknown
+    # name simply matches nothing rather than raising: a stale entry in an allow-list
+    # should not take down a UI that is merely listing models.
+    wanted = {DEFAULT_REGISTRY.resolve(name, default=name) for name in settings.services}
+    return catalog.for_services(wanted)

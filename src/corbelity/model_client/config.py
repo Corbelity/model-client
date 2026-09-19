@@ -63,6 +63,14 @@ class ModelConfig:
     # a model released after this package shipped needs no new release.
     catalog_path: Path | None = None
 
+    # Optional allow-list of services worth offering, e.g. ("openrouter",). None means no
+    # filter. This is PRESENTATION ONLY -- it narrows what catalog_for() lists, and
+    # nothing more. It does not prevent a call to a filtered-out service, because the
+    # catalog is descriptive rather than enforcing, and because the capability flags for
+    # every service must stay loadable however the list is narrowed. Aliases are folded,
+    # so ("hf",) and ("huggingface",) mean the same thing.
+    services: tuple[str, ...] | None = None
+
     def with_overrides(self, **changes: object) -> ModelConfig:
         """A derived config. Thin wrapper over dataclasses.replace, kept because it reads
         better at call sites and keeps `replace` out of application imports."""
@@ -101,6 +109,13 @@ class ModelConfig:
                 raise ValueError(f"{name} must be a number, got {raw!r}.") from err
 
         catalog = source.get("CORBELITY_MODEL_CATALOG", "").strip()
+        # Comma-separated, e.g. CORBELITY_SERVICES=openrouter,ollama-local. An empty or
+        # absent value means no filter, which is not the same as an empty allow-list.
+        services = tuple(
+            name.strip()
+            for name in source.get("CORBELITY_SERVICES", "").split(",")
+            if name.strip()
+        ) or None
         max_tokens = _int("CORBELITY_MAX_TOKENS", cls.default_max_tokens)
         temperature = _float("CORBELITY_TEMPERATURE", cls.default_temperature)
 
@@ -116,6 +131,7 @@ class ModelConfig:
             default_top_p=_float("CORBELITY_TOP_P", cls.default_top_p),
             num_ctx=_int("CORBELITY_NUM_CTX", cls.num_ctx),
             catalog_path=Path(catalog) if catalog else None,
+            services=services,
         )
 
 

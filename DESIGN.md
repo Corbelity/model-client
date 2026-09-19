@@ -133,6 +133,41 @@ The catalog is **descriptive, not enforcing**. Calling an unlisted model works f
 Nothing here gates a request — it exists so a UI can populate a dropdown and so provider
 code can read a flag instead of hardcoding a list.
 
+### Listing is filtered; calling is not
+
+The merge in the previous paragraph can add an entry and can correct one, but it cannot
+remove one. That leaves a real gap: someone holding a single provider's key does not want
+four providers' models in a dropdown, and no merge rule will take them out.
+
+The fix is a filter on the *listing path* rather than on the catalog. `catalog_for(config)`
+narrows to `config.services`; `available_services()` reports which services have their
+credentials and endpoints present, so the common case is one line:
+
+```python
+ModelConfig(services=available_services())
+```
+
+Two constraints make this safe, and both are worth stating because both are easy to
+violate later while tidying up:
+
+**Provider code reads the unfiltered catalog.** `_accepts_sampling_params()` calls
+`load_catalog()`, not `catalog_for()`. A capability flag must be findable for any model
+the caller actually names, whatever a UI happens to be listing at the time. Narrowing a
+display must never change how a call behaves — the moment those two call sites are merged
+"for consistency", filtering a service out of a dropdown starts sending `temperature` to a
+model that rejects it. `tests/test_service_filter.py` has a test whose only job is to fail
+if that happens.
+
+**Filtering is never automatic.** `available_services()` supplies an answer; nothing
+applies it. A library that silently hid a provider because an environment variable was
+unset would produce a question — "why is my model gone?" — whose answer lives in someone
+else's code. One explicit line keeps the behaviour where the reader can see it.
+
+The same reasoning explains what `available_services()` deliberately does *not* do: it
+checks that a credential is **set**, never that it works. Verification would mean a network
+call per provider at startup, and a provider that is briefly down is not a provider you
+should stop offering.
+
 ## 7. Validation refuses to repair
 
 History must strictly alternate, begin with a `user` turn, and end with an `assistant`

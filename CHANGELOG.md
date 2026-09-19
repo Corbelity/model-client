@@ -15,6 +15,17 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- `catalog_for(config)` and `available_services()`, plus a `services` field on
+  `ModelConfig` (`CORBELITY_SERVICES`, comma-separated). A user catalog merges over the
+  built-in one and so cannot remove an entry; this narrows what gets **listed** instead,
+  which is what a UI needs when only one provider's credentials are present.
+  `available_services()` reports which services have their credentials and endpoints set,
+  making the common case `ModelConfig(services=available_services())`. Filtering is never
+  applied automatically, affects listing only, and does not change how any call behaves:
+  provider code continues to read the unfiltered catalog so capability flags stay findable
+  for every model. Aliases fold; `None` means no filter and `()` means list nothing.
+- `ModelCatalog.for_services()`, returning a narrowed catalog rather than a tuple so it
+  can be filtered again or passed anywhere a catalog is expected.
 - `ModelClient`, a provider-agnostic base class for text, image and speech model calls,
   with four provider implementations: `anthropic`, `openrouter`, `ollama-local`,
   `ollama` (cloud) and `huggingface`.
@@ -46,8 +57,17 @@ Everything below becomes `0.1.0` when the first tag is cut.
   capability questions with zero provider SDKs installed.
 - A typed public API: `py.typed` ships inline annotations to downstream type checkers.
 - Test suite covering validation, sniffing, configuration, credential resolution, the
-  catalog, the registry and the observability contract, using a fake provider rather than
-  network calls.
+  catalog, the registry, service filtering and the observability contract, using a fake
+  provider rather than network calls.
+
+### Fixed
+
+- Provider client construction uses `cast()` rather than `# type: ignore[no-any-return]`.
+  The ignore could not be correct in both CI environments at once: required with a
+  provider SDK installed, reported as unused without one. The lint and type-check steps
+  now run in both environments, so a construct that is only valid in one will fail.
+- GitHub Actions moved to the Node 24 majors (`checkout@v6`, `setup-uv@v7`,
+  `upload-artifact@v6`), and Dependabot now watches actions and dev dependencies monthly.
 
 ### Notes on provenance
 

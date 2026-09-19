@@ -39,6 +39,8 @@ from .errors import (
     UnsupportedModalityError,
 )
 from .factory import (
+    available_services,
+    catalog_for,
     client_class,
     known_services,
     make_model_client,
@@ -92,7 +94,9 @@ __all__ = [
     "UnknownServiceError",
     "UnsupportedModalityError",
     "__version__",
+    "available_services",
     "builtin_catalog",
+    "catalog_for",
     "client_class",
     "get_default_config",
     "get_spec",

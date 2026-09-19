@@ -14,7 +14,7 @@ code can look up a capability flag instead of hardcoding a list of model-name pr
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
@@ -91,6 +91,16 @@ class ModelCatalog:
 
     def for_modality(self, modality: str) -> tuple[ModelInfo, ...]:
         return tuple(m for m in self if m.modality == modality)
+
+    def for_services(self, services: Iterable[str]) -> ModelCatalog:
+        """A catalog narrowed to the given services.
+
+        Returns a ModelCatalog rather than a tuple, unlike the two filters above, because
+        this is the one a caller is likely to narrow again or hand onward -- a workbench
+        filters to the services it has credentials for, then asks that result for a
+        modality. Order is preserved, so a UI's list stays stable."""
+        wanted = frozenset(services)
+        return ModelCatalog(tuple(m for m in self if m.service in wanted))
 
     def merged_with(self, other: ModelCatalog) -> ModelCatalog:
         """`other` wins on id collision -- a user catalog overrides the built-in entry

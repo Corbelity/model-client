@@ -140,6 +140,7 @@ client = make_model_client("anthropic", config=config)   # or set_default_config
 | `CORBELITY_TOP_P` | unset | left to the provider unless you set it |
 | `CORBELITY_NUM_CTX` | `16384` | Ollama context window; ignored elsewhere |
 | `CORBELITY_MODEL_CATALOG` | unset | path to a catalog that merges over the built-in one |
+| `CORBELITY_SERVICES` | unset | comma-separated allow-list of services to list |
 
 This package **does not** call `load_dotenv()`, **does not** write to `os.environ`, and
 **does not** configure logging. Those are your application's decisions. It reads only the
@@ -168,6 +169,49 @@ The catalog is descriptive, not enforcing — calling a model that isn't listed 
 It exists so a UI can populate a dropdown, and so provider code can read a capability flag
 (`supports_sampling`, for models that reject `temperature` with a 400) instead of matching
 hardcoded model-name prefixes.
+
+### Showing only the services you can actually call
+
+A user catalog merges over the built-in one, which means it can add a model or correct an
+entry, but it can't remove one. If you only hold an OpenRouter key, you don't want four
+providers' models in a dropdown you can't use.
+
+That's a filter on the *listing*, not a change to the catalog:
+
+```python
+from corbelity.model_client import ModelConfig, available_services, catalog_for
+
+config = ModelConfig(services=available_services())
+for entry in catalog_for(config):
+    print(entry.id)          # only services whose credentials are actually set
+```
+
+`available_services()` reports which services have their credentials and endpoints present
+in the environment — with only `OPENROUTER_API_KEY` set it returns `("openrouter",)`, and
+`ollama-local` appears when `LOCAL_OLLAMA_URL` is set, since a local host needs an address
+rather than a key. It checks that a variable is **set**, never that the credential works;
+verifying would mean a network call per provider at startup.
+
+Nothing applies it for you. Silently hiding a provider because an environment variable is
+missing is how you get "why did my model disappear?", so the filter is always an explicit
+choice. Set it yourself if you'd rather:
+
+```python
+ModelConfig(services=("openrouter", "ollama-local"))
+```
+
+or from the environment:
+
+```bash
+export CORBELITY_SERVICES=openrouter,ollama-local
+```
+
+Aliases fold, so `("hf",)` and `("huggingface",)` mean the same thing. `None` (the default)
+means no filter; an empty tuple means show nothing, which is a different thing.
+
+**This narrows what you list, and nothing else.** It does not prevent a call to a
+filtered-out service, and provider code still reads the full catalog — so the capability
+flags for every model stay findable no matter what a UI happens to be showing.
 
 ## Tracing
 

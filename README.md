@@ -41,7 +41,9 @@ installing this to talk to one provider never drags in the other three:
 
 ```bash
 pip install "corbelity-model-client[anthropic]"
+pip install "corbelity-model-client[openai]"
 pip install "corbelity-model-client[openrouter]"
+pip install "corbelity-model-client[gemini]"
 pip install "corbelity-model-client[ollama]"
 pip install "corbelity-model-client[huggingface]"
 pip install "corbelity-model-client[all]"
@@ -60,12 +62,15 @@ call site says plainly which one it is using.
 | Service | What it is | Credential (first match wins) | Endpoint |
 |---|---|---|---|
 | `anthropic` | Anthropic API, direct | `ANTHROPIC_API_KEY` | fixed |
+| `openai` | OpenAI API, direct | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | `openrouter` | OpenRouter, cloud | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` |
+| `gemini` | Gemini, via Google's OpenAI-compatible endpoint | `GEMINI_API_KEY`, `GOOGLE_API_KEY` | `GEMINI_BASE_URL` |
 | `ollama-local` | Ollama on a local host | none — the box is trusted | `LOCAL_OLLAMA_URL`, `OLLAMA_HOST` (**required**) |
 | `ollama` | Ollama Cloud | `OLLAMA_API_KEY` | `OLLAMA_CLOUD_URL` |
 | `huggingface` | HuggingFace Inference | `HF_TOKEN`, `HUGGINGFACE_HUB_KEY`, `HUGGINGFACEHUB_API_TOKEN` | fixed |
 
-Only `huggingface` produces images and sound; the rest are text. Ask before you build:
+`openai` and `huggingface` produce text, images and sound; the rest are text. Ask before
+you build:
 
 ```python
 from corbelity.model_client import supported_modalities
@@ -77,7 +82,21 @@ That answers without importing an SDK or needing a credential, so a caller can r
 impossible request before spending anything on it.
 
 Common aliases fold onto the canonical names (`hf` → `huggingface`, `open_router` →
-`openrouter`, `ollama-cloud` → `ollama`), and names are trimmed and lower-cased.
+`openrouter`, `google` → `gemini`, `ollama-cloud` → `ollama`), and names are trimmed and
+lower-cased.
+
+### A note on Gemini
+
+`gemini` reaches Google's models through their **OpenAI-compatibility endpoint**, which is
+a shim — Google's own guidance is that if you aren't already using the OpenAI libraries,
+you should call the Gemini API directly. It's here because it gets Gemini text working
+through the existing dialect with no new dependency.
+
+So `gemini` is text-only today. Image generation through the shim is unverified, and audio
+generation runs over the Live API, which is a bidirectional streaming session rather than a
+request/response call and so can't be wrapped honestly by `generate_speech()`. Both wait
+for a native provider built on `google-genai`, which will arrive as a **separate service**
+rather than a change to this one — so code written against the shim won't break.
 
 ## Usage
 
@@ -167,8 +186,15 @@ for entry in load_catalog().for_service("openrouter"):
 
 The catalog is descriptive, not enforcing — calling a model that isn't listed works fine.
 It exists so a UI can populate a dropdown, and so provider code can read a capability flag
-(`supports_sampling`, for models that reject `temperature` with a 400) instead of matching
-hardcoded model-name prefixes.
+instead of matching hardcoded model-name prefixes. Two such flags ship today:
+
+- `supports_sampling` — some models reject `temperature` and `top_p` with a 400 rather
+  than ignoring them.
+- `max_tokens_param` — newer OpenAI models reject `max_tokens` and require
+  `max_completion_tokens`. Set it to the name that model wants.
+
+Both default to the permissive behaviour when a model isn't listed, so an unlisted model
+still works.
 
 ### Showing only the services you can actually call
 

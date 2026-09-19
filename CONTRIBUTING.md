@@ -30,8 +30,16 @@ explains why.
 - **New providers in this package.** The registry exists so you don't need one:
   `register_provider()` accepts a `ProviderSpec` from any package, and your provider
   inherits all the timing, logging, tracing and validation unchanged. Publish it as your
-  own package. A provider moves into this one only if there's clear demand and I can
-  commit to maintaining it, which means keeping up with an SDK I may not use.
+  own package.
+
+  The exception is a provider that a library about comparing providers would look odd
+  without — the large general-purpose APIs. Those are in scope, and several already ship.
+  Anything narrower moves in only if there's clear demand and I can commit to maintaining
+  it, which means keeping up with an SDK I may not otherwise use. Open an issue and we'll
+  work out which side of that line it falls on.
+
+  If a provider speaks a protocol that's already here, say so in the issue: three services
+  share `OpenAICompatibleClient` and a new one may be a `ProviderSpec` plus a dozen lines.
 - **Features listed as non-goals** in DESIGN.md §13 (retries, streaming, async, cost
   calculation, prompt templating, caching). Each is absent for a stated reason. If you
   think a reason is wrong, that's a genuinely interesting issue to open — but make the

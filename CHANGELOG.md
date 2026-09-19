@@ -15,6 +15,23 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- `openai` and `gemini` providers. `openai` covers text, image and speech; `gemini`
+  reaches Google's models through their OpenAI-compatibility endpoint and is text-only
+  for now — image generation through that shim is unverified, and audio runs over the
+  bidirectional Live API, which is a streaming session rather than a request/response
+  call. Both wait for a native `google-genai` provider, which will arrive as a separate
+  service rather than a change to this one.
+- `OpenAICompatibleClient`, an intermediate base holding the chat-completions request and
+  response handling now shared by `openrouter`, `openai` and `gemini`. Subclass it to
+  point at another OpenAI-compatible gateway; a `ProviderSpec` and a `SPEC` attribute are
+  the whole job.
+- `max_tokens_param` catalog flag, naming the key a model wants for its completion cap.
+  Newer OpenAI models reject `max_tokens` and require `max_completion_tokens`; this is a
+  spelling difference, so it is data rather than a prefix rule. Defaults to `max_tokens`
+  for unlisted models.
+- Catalog entries for `gpt-5.6-terra`, `gpt-image-2.5-flare`, `gpt-4o-mini-tts` and
+  `gemini-3.8-flash`, and `[openai]` / `[gemini]` extras. Both resolve to the `openai`
+  SDK, so adding either provider pulls in no new dependency.
 - `catalog_for(config)` and `available_services()`, plus a `services` field on
   `ModelConfig` (`CORBELITY_SERVICES`, comma-separated). A user catalog merges over the
   built-in one and so cannot remove an entry; this narrows what gets **listed** instead,

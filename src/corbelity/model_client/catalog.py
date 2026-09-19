@@ -37,6 +37,9 @@ class ModelInfo:
     # None means "not stated" -- the provider decides. Only set this when a model is known
     # to reject sampling parameters, which some do with a 400 rather than a warning.
     supports_sampling: bool | None = None
+    # The name this model wants for its completion cap. Newer OpenAI models reject
+    # `max_tokens` and require `max_completion_tokens`. None means the dialect's default.
+    max_tokens_param: str | None = None
     cost_per_1k_input: float | None = None
     cost_per_1k_output: float | None = None
 
@@ -55,6 +58,7 @@ class ModelInfo:
             return float(value) if isinstance(value, int | float) else None
 
         supports = raw.get("supports_sampling")
+        max_tokens_param = raw.get("max_tokens_param")
         return cls(
             id=model_id,
             service=service,
@@ -63,6 +67,10 @@ class ModelInfo:
             description=str(raw.get("description") or ""),
             accepts_images=bool(raw.get("accepts_images", False)),
             supports_sampling=supports if isinstance(supports, bool) else None,
+            max_tokens_param=(
+                max_tokens_param if isinstance(max_tokens_param, str) and max_tokens_param
+                else None
+            ),
             cost_per_1k_input=_opt_float("cost_per_1k_input"),
             cost_per_1k_output=_opt_float("cost_per_1k_output"),
         )

@@ -95,6 +95,34 @@ BUILTIN_SPECS: tuple[ProviderSpec, ...] = (
         aliases=("open_router", "open-router"),
     ),
     ProviderSpec(
+        name="openai",
+        client_path=f"{_PROVIDERS_MODULE}.openai:OpenAIClient",
+        extra="openai",
+        key_env=("OPENAI_API_KEY",),
+        # No default: the SDK's own base URL is correct, and hardcoding it here would
+        # mean tracking a value we do not own. An override is still honoured.
+        base_url_env=("OPENAI_BASE_URL",),
+        # The only provider here that does all three natively -- but images and speech
+        # come from separate SDK surfaces, not from chat completions.
+        modalities=frozenset({TEXT, IMAGE, SOUND}),
+        aliases=("open_ai",),
+    ),
+    ProviderSpec(
+        name="gemini",
+        client_path=f"{_PROVIDERS_MODULE}.gemini:GeminiClient",
+        extra="gemini",
+        key_env=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        base_url_env=("GEMINI_BASE_URL",),
+        # Google's OpenAI-compatibility endpoint. Text only for now: image generation is
+        # unverified through this shim, and audio generation runs over the bidirectional
+        # Live API, which is a streaming session rather than a request/response call and
+        # therefore does not fit this interface at all. Both wait for a native provider
+        # built on google-genai.
+        default_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        modalities=frozenset({TEXT}),
+        aliases=("google", "google-gemini"),
+    ),
+    ProviderSpec(
         name="ollama-local",
         client_path=f"{_PROVIDERS_MODULE}.ollama:OllamaLocalClient",
         extra="ollama",

@@ -12,7 +12,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Corbelity LLC" }]
 keywords = [
-    "llm", "anthropic", "openrouter", "ollama", "huggingface",
+    "llm", "anthropic", "openai", "openrouter", "gemini", "ollama", "huggingface",
     "multimodal", "inference", "tracing", "observability",
 ]
 classifiers = [
@@ -33,7 +33,12 @@ dependencies = []
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40"]
+# OpenRouter, OpenAI and Gemini all speak chat completions through the same SDK. They get
+# separate extras anyway, so `pip install corbelity-model-client[gemini]` works and the
+# install hint on a missing dependency names the extra the caller actually asked for.
 openrouter = ["openai>=1.50"]
+openai = ["openai>=1.50"]
+gemini = ["openai>=1.50"]
 ollama = ["ollama>=0.4"]
 # Pillow is not optional for HuggingFace: text_to_image returns a PIL.Image that the
 # provider re-encodes to PNG bytes so callers never need Pillow themselves.
@@ -41,6 +46,8 @@ huggingface = ["huggingface-hub>=0.26", "pillow>=10.0"]
 all = [
     "corbelity-model-client[anthropic]",
     "corbelity-model-client[openrouter]",
+    "corbelity-model-client[openai]",
+    "corbelity-model-client[gemini]",
     "corbelity-model-client[ollama]",
     "corbelity-model-client[huggingface]",
 ]

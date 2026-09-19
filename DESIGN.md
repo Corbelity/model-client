@@ -59,6 +59,19 @@ A provider implements `_build_client()` (construct the SDK object) and `_invoke(
 (make the call, return a normalized result). Everything else — validation, timing,
 logging, tracing, credential resolution, modality checks, error translation — is inherited.
 
+Where several providers speak the same wire protocol, the shared half lives in an
+intermediate base and the leaves carry only a `SPEC`. Three services use the OpenAI
+chat-completions dialect through the same SDK — OpenRouter, OpenAI directly, and Gemini's
+compatibility endpoint — so `OpenAICompatibleClient` holds the request and response
+handling and each leaf is about a dozen lines. The two Ollama clients share a base the
+same way. The test is protocol, not vendor: a provider gets its own `_invoke()` when it
+speaks differently, not when it bills differently.
+
+Modality is a separate axis from dialect. `OpenAIClient` inherits text from that base but
+implements `_invoke_image()` and `_invoke_speech()` itself, because images and speech come
+from entirely different SDK surfaces (`images.generate`, `audio.speech.create`) with their
+own response shapes. Sharing the text path does not imply sharing the others.
+
 Two design rules keep that seam honest:
 
 **Results are normalized, not passed through.** `_invoke()` returns an `LLMResult` or
@@ -128,6 +141,17 @@ return a 400 rather than a warning if you send `temperature`. The prototype carr
 hardcoded tuple of model-name prefixes. Now the catalog's `supports_sampling` flag is
 authoritative when stated, and the prefix match is only a fallback. A model released after
 this package ships is a JSON edit, not a release.
+
+The second flag makes the same point from a different direction. Newer OpenAI models
+reject `max_tokens` and require `max_completion_tokens` — not a capability difference but
+a **spelling** one, and one that will keep happening as providers revise their APIs. So
+`max_tokens_param` names the key rather than encoding a rule: the shared
+chat-completions client builds its payload with whatever the catalog says this model
+wants, defaulting to `max_tokens`. A prefix list would have needed editing on OpenAI's
+schedule; this needs editing on the catalog's.
+
+The general shape worth keeping: when providers differ in a way that is **data** (a name,
+a flag, an endpoint), put it in data. Reserve code for differences in **behaviour**.
 
 The catalog is **descriptive, not enforcing**. Calling an unlisted model works fine.
 Nothing here gates a request — it exists so a UI can populate a dropdown and so provider

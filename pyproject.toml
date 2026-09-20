@@ -95,5 +95,3 @@ strict = true
 # The provider SDKs are optional installs, so mypy will not always find them.
 ignore_missing_imports = true
 
-[tool.uv.sources]
-corbelity-model-client = { git = "https://github.com/Corbelity/model-client" }

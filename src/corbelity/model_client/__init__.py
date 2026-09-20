@@ -11,10 +11,18 @@ Routing has no global local/cloud flag. The SERVICE NAME picks the provider, so 
 call site says plainly which one it is using:
 
     anthropic     Anthropic API, direct
+    openai        OpenAI API, direct -- text, image and sound
+    gemini        Gemini, via Google's OpenAI-compatibility endpoint (text only)
     openrouter    OpenRouter, cloud
     ollama-local  Ollama running on the local host
     ollama        Ollama Cloud
-    huggingface   HuggingFace Inference (the only one that also does image and sound)
+    huggingface   HuggingFace Inference -- text, image and sound
+
+Text is the common denominator; only openai and huggingface generate images and speech,
+and each does so through its own SDK surface rather than through chat completions. Ask a
+service for something it cannot produce and it raises UnsupportedModalityError before any
+network call -- supported_modalities() answers the same question without even importing
+the provider.
 
 What this package will not do to your process
 ---------------------------------------------

@@ -153,12 +153,18 @@ all = [
 anthropic = [
     { name = "anthropic" },
 ]
+gemini = [
+    { name = "openai" },
+]
 huggingface = [
     { name = "huggingface-hub" },
     { name = "pillow" },
 ]
 ollama = [
     { name = "ollama" },
+]
+openai = [
+    { name = "openai" },
 ]
 openrouter = [
     { name = "openai" },
@@ -175,15 +181,19 @@ dev = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40" },
     { name = "corbelity-model-client", extras = ["anthropic"], marker = "extra == 'all'" },
+    { name = "corbelity-model-client", extras = ["gemini"], marker = "extra == 'all'" },
     { name = "corbelity-model-client", extras = ["huggingface"], marker = "extra == 'all'" },
     { name = "corbelity-model-client", extras = ["ollama"], marker = "extra == 'all'" },
+    { name = "corbelity-model-client", extras = ["openai"], marker = "extra == 'all'" },
     { name = "corbelity-model-client", extras = ["openrouter"], marker = "extra == 'all'" },
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = ">=0.26" },
     { name = "ollama", marker = "extra == 'ollama'", specifier = ">=0.4" },
+    { name = "openai", marker = "extra == 'gemini'", specifier = ">=1.50" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.50" },
     { name = "openai", marker = "extra == 'openrouter'", specifier = ">=1.50" },
     { name = "pillow", marker = "extra == 'huggingface'", specifier = ">=10.0" },
 ]
-provides-extras = ["anthropic", "openrouter", "ollama", "huggingface", "all"]
+provides-extras = ["anthropic", "openrouter", "openai", "gemini", "ollama", "huggingface", "all"]
 
 [package.metadata.requires-dev]
 dev = [

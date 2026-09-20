@@ -14,7 +14,8 @@
         "service": "anthropic",
         "modality": "text",
         "description": "Smaller, faster Anthropic model via the direct API.",
-        "accepts_images": true
+        "accepts_images": true,
+        "supports_sampling": false
     },
     {
         "id": "gpt-5.6-terra",
@@ -23,6 +24,7 @@
         "modality": "text",
         "description": "OpenAI direct API; balances capability and cost.",
         "accepts_images": true,
+        "supports_sampling": false,
         "max_tokens_param": "max_completion_tokens"
     },
     {
@@ -98,27 +100,11 @@
         "accepts_images": true
     },
     {
-        "id": "stabilityai/stable-diffusion-3.5-large",
-        "name": "Stable Diffusion 3.5 Large",
-        "service": "huggingface",
-        "modality": "image",
-        "description": "Text-to-image generation.",
-        "accepts_images": false
-    },
-    {
         "id": "black-forest-labs/FLUX.1-dev",
         "name": "FLUX.1 dev",
         "service": "huggingface",
         "modality": "image",
         "description": "Text-to-image generation.",
-        "accepts_images": false
-    },
-    {
-        "id": "hexgrad/Kokoro-82M",
-        "name": "Kokoro 82M",
-        "service": "huggingface",
-        "modality": "sound",
-        "description": "Text-to-speech synthesis.",
         "accepts_images": false
     }
 ]

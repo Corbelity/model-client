@@ -96,4 +96,4 @@ strict = true
 ignore_missing_imports = true
 
 [tool.uv.sources]
-corbelity-model-client = { path = "../model-client", editable = true }
+corbelity-model-client = { git = "https://github.com/Corbelity/model-client" }

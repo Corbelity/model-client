@@ -5,8 +5,7 @@
         "service": "anthropic",
         "modality": "text",
         "description": "Anthropic direct API.",
-        "accepts_images": true,
-        "supports_sampling": false
+        "accepts_images": true
     },
     {
         "id": "claude-haiku-4-5-20251001",
@@ -14,8 +13,7 @@
         "service": "anthropic",
         "modality": "text",
         "description": "Smaller, faster Anthropic model via the direct API.",
-        "accepts_images": true,
-        "supports_sampling": false
+        "accepts_images": true
     },
     {
         "id": "gpt-5.6-terra",

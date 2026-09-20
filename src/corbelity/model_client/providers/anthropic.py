@@ -1,9 +1,21 @@
-"""Anthropic, direct API."""
+"""Anthropic, direct API.
+
+Note on sampling: the Messages API no longer takes `temperature`, `top_p` or `top_k`. They
+are absent from MessageCreateParams as of anthropic 1.7, so passing one is a TypeError from
+the SDK rather than a 400 from the service -- the argument never leaves the machine. This
+client therefore never sends them, and pyproject pins `anthropic>=1.7` so that behaviour
+matches the SDK that is actually installed.
+
+The consequence for callers: a temperature or top_p passed to an Anthropic client is
+accepted and ignored. That is deliberate. A UI's sliders always hold a value, and failing
+every Anthropic call because a slider exists would be worse than quietly not sending a
+parameter the API has withdrawn. `supports_sampling` in the catalog is now meaningless for
+this provider (it still governs the OpenAI-compatible ones, which do accept sampling).
+"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from ..catalog import load_catalog
 from ..client import ModelClient, get_field, load_sdk
 from ..media import ImageInput, LLMResult
 from ..messages import Message
@@ -17,29 +29,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
 class AnthropicClient(ModelClient["Anthropic"]):
     SPEC: ClassVar[ProviderSpec] = get_spec("anthropic")
 
-    # Some current Anthropic models REMOVED temperature/top_p -- sending either returns a
-    # 400, not a warning. A UI's sliders always have a value, so the client drops them
-    # rather than making every caller know which models care.
-    #
-    # This prefix list is a FALLBACK. The catalog is consulted first: an entry with
-    # "supports_sampling": false (or true) is authoritative, which is how a model released
-    # after this package shipped gets handled without a code change. Matched by prefix
-    # because the families keep growing.
-    _SAMPLING_UNSUPPORTED_PREFIXES: ClassVar[tuple[str, ...]] = (
-        "claude-fable-", "claude-mythos-", "claude-opus-5", "claude-sonnet-5",
-        "claude-opus-4-7", "claude-opus-4-8",
-    )
-
-    def _accepts_sampling_params(self) -> bool:
-        entry = load_catalog(self._config.catalog_path).get(self._model)
-        if entry is not None and entry.supports_sampling is not None:
-            return entry.supports_sampling
-        return not self._model.startswith(self._SAMPLING_UNSUPPORTED_PREFIXES)
-
     def _build_client(self) -> Anthropic:
         self._logger.info(
-            "Initializing Anthropic client: %s (temperature=%s, max_tokens=%s)",
-            self._model, self._temperature, self._max_tokens,
+            "Initializing Anthropic client: %s (max_tokens=%s)",
+            self._model, self._max_tokens,
         )
         sdk = load_sdk("anthropic", self.SPEC.extra)
         # cast rather than `# type: ignore[no-any-return]`: with the SDK installed the call
@@ -61,10 +54,8 @@ class AnthropicClient(ModelClient["Anthropic"]):
                 {"role": "user", "content": anthropic_user_content(user, images)},
             ],
         }
-        if self._accepts_sampling_params():
-            payload["temperature"] = self._temperature
-            if self._top_p is not None:
-                payload["top_p"] = self._top_p
+        # No temperature / top_p / top_k: the Messages API withdrew all three. See the
+        # module docstring.
 
         response = self._client.messages.create(**payload)
 

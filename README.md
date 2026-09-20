@@ -188,8 +188,10 @@ The catalog is descriptive, not enforcing — calling a model that isn't listed 
 It exists so a UI can populate a dropdown, and so provider code can read a capability flag
 instead of matching hardcoded model-name prefixes. Two such flags ship today:
 
-- `supports_sampling` — some models reject `temperature` and `top_p` with a 400 rather
-  than ignoring them.
+- `supports_sampling` — some OpenAI-compatible models reject `temperature` and `top_p`
+  with a 400 rather than ignoring them. It does **not** apply to Anthropic: the Messages
+  API withdrew sampling parameters altogether, so that client never sends them and the
+  flag would have nothing to govern.
 - `max_tokens_param` — newer OpenAI models reject `max_tokens` and require
   `max_completion_tokens`. Set it to the name that model wants.
 

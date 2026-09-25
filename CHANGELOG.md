@@ -15,6 +15,14 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- Component breakdown of input tokens on `ModelResult`: `input_text_tokens`,
+  `input_image_tokens` and `input_cached_tokens`, all defaulting to `None`. The
+  components bill at different rates, so a caller costing a call from the flat
+  `prompt_tokens` alone overstates a cached call and understates one carrying image
+  input. Populated from `usage.input_tokens_details` on the OpenAI image path and from
+  `usage.prompt_tokens_details.cached_tokens` on the chat path; `prompt_tokens` and
+  `completion_tokens` are unchanged. The trace record carries the split too, since that
+  is where a cost monitor reads usage back from. (SA-341)
 - `openai` and `gemini` providers. `openai` covers text, image and speech; `gemini`
   reaches Google's models through their OpenAI-compatibility endpoint and is text-only
   for now — image generation through that shim is unverified, and audio runs over the

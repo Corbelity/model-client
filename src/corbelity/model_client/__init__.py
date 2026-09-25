@@ -43,7 +43,9 @@ from .errors import (
     MissingCredentialsError,
     MissingDependencyError,
     ModelClientError,
+    TooManyImagesError,
     UnknownServiceError,
+    UnsupportedImageInputError,
     UnsupportedModalityError,
 )
 from .factory import (
@@ -98,8 +100,10 @@ __all__ = [
     "ModelResult",
     "NullTrace",
     "ProviderSpec",
+    "TooManyImagesError",
     "TraceSink",
     "UnknownServiceError",
+    "UnsupportedImageInputError",
     "UnsupportedModalityError",
     "__version__",
     "available_services",

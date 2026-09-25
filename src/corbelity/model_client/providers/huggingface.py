@@ -74,7 +74,10 @@ class HuggingFaceClient(ModelClient["InferenceClient"]):
             finish_reason=getattr(choice, "finish_reason", None),
         )
 
-    def _invoke_image(self, prompt: str) -> MediaResult:
+    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...]) -> MediaResult:
+        # `images` is always empty here: the huggingface spec does not declare
+        # image_input, so generate_image() rejects references before reaching a provider.
+        # The parameter is present because the seam requires it, not because it is used.
         # text_to_image returns a PIL.Image; re-encode to PNG bytes so the caller never
         # needs Pillow to hand the result on.
         image = self._call(IMAGE, self._client.text_to_image, prompt, model=self._model)

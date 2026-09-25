@@ -31,6 +31,19 @@ class ModelResult:
     total_tokens: int | None = None
     finish_reason: str | None = None
 
+    # Component breakdown of prompt_tokens, when the provider reports one. These are a
+    # BILLING concern, not a curiosity: the components price at different rates (for
+    # gpt-image-2.5-flare, $5/M text against $8/M image and $1.25/M cached text), so a
+    # caller with only the flat figure charges everything at the text rate -- overstating
+    # a cached call and understating one carrying reference images.
+    #
+    # They sit on the shared base rather than on MediaResult because the chat path reports
+    # cached input too. prompt_tokens is left exactly as the provider reports it; these
+    # are additional, never a replacement, because callers already depend on it.
+    input_text_tokens: int | None = None
+    input_image_tokens: int | None = None
+    input_cached_tokens: int | None = None
+
 
 @dataclass(kw_only=True)
 class LLMResult(ModelResult):

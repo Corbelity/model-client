@@ -128,7 +128,7 @@ are validated before the provider is touched, so a malformed request costs nothi
 ### Images and speech
 
 ```python
-result = make_model_client("huggingface", model="black-forest-labs/FLUX.1-dev").generate_image(
+result = make_model_client("openai", model="gpt-image-2.5-flare").generate_image(
     "a corbel bracket, isometric, line art"
 )
 Path("out.png").write_bytes(result.data)   # result.mime_type tells you how to render it
@@ -136,6 +136,59 @@ Path("out.png").write_bytes(result.data)   # result.mime_type tells you how to r
 
 Asking a provider for a modality it cannot produce raises `UnsupportedModalityError`
 before any network call, rather than returning a provider-specific 400.
+
+### Reference images
+
+`generate_image()` also takes **reference images** to condition the generation on — a
+character sheet, a set, a prop — so that a face or a place stays the same between
+generations:
+
+```python
+from corbelity.model_client import ImageInput, make_model_client
+
+client = make_model_client("openai", model="gpt-image-2.5-flare")
+result = client.generate_image(
+    "same character, three-quarter view, dusk lighting",
+    images=[ImageInput.from_bytes(sheet_bytes, name="hero-sheet.png")],
+)
+```
+
+Same `ImageInput` type and same validation as the vision input to `complete()`. Omit
+`images` and the call is exactly what it was before the parameter existed.
+
+Not every service can take them, and a service that can may cap how many. Both are
+declared on the provider spec, so you can ask without building a client:
+
+```python
+from corbelity.model_client import get_spec
+
+get_spec("openai").image_input             # True
+get_spec("openai").max_reference_images    # 16
+```
+
+A service without the capability raises `UnsupportedImageInputError`, and too many
+references raises `TooManyImagesError` — both **before** any network call, so you are
+never told about the limit after uploading several megabytes. Today only `openai`
+supports references; on that path they switch the call from the images endpoint to the
+edit endpoint, which is handled for you.
+
+### Token usage, and what it costs
+
+Where a provider reports a breakdown of its input, `ModelResult` carries it alongside the
+flat figures:
+
+```python
+result.prompt_tokens        # everything the provider counted as input
+result.input_text_tokens    # … of which text
+result.input_image_tokens   # … of which image
+result.input_cached_tokens  # … of which cached
+```
+
+This matters for cost rather than curiosity: the components bill at different rates, so a
+caller pricing a call from `prompt_tokens` alone overstates a cached call and understates
+one carrying image input. Anything a provider doesn't report stays `None`, and the flat
+figures are unchanged. The trace record carries the split too, which is where a cost
+monitor should read it from.
 
 ## Configuration
 

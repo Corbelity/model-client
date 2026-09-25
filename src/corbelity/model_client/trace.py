@@ -145,6 +145,13 @@ class JsonlTraceLogger:
                     "prompt_tokens": getattr(result, "prompt_tokens", None),
                     "completion_tokens": getattr(result, "completion_tokens", None),
                     "total_tokens": getattr(result, "total_tokens", None),
+                    # The component split, when the provider reports one. Recorded here
+                    # because the trace is where a cost monitor reads usage back from --
+                    # a split that reaches the result but not the record is invisible to
+                    # the thing that needs it. Absent components stay None.
+                    "input_text_tokens": getattr(result, "input_text_tokens", None),
+                    "input_image_tokens": getattr(result, "input_image_tokens", None),
+                    "input_cached_tokens": getattr(result, "input_cached_tokens", None),
                 },
                 "finish_reason": getattr(result, "finish_reason", None),
                 "error": error,

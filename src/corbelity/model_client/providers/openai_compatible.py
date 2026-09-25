@@ -94,6 +94,10 @@ class OpenAICompatibleClient(ModelClient["OpenAI"]):
         # The response carries a single content block; usage carries the token counts.
         choice = response.choices[0]
         usage = getattr(response, "usage", None)
+        # Cached input prices at a fraction of fresh input, so a caller costing this call
+        # from the flat prompt_tokens alone overstates it. Smaller gap than the image path
+        # (there is no text/image split to recover here), but the same fix.
+        prompt_details = get_field(usage, "prompt_tokens_details") if usage is not None else None
         # OpenAI-shaped providers return content=None (not "") when there is nothing to
         # say; coerce to "" so the base complete() empty-response check can see it
         # (str(None) would be the literal "None"). NOTE: finish_reason lives on the
@@ -104,5 +108,8 @@ class OpenAICompatibleClient(ModelClient["OpenAI"]):
             prompt_tokens=get_field(usage, "prompt_tokens") if usage is not None else None,
             completion_tokens=get_field(usage, "completion_tokens") if usage is not None else None,
             total_tokens=get_field(usage, "total_tokens") if usage is not None else None,
+            input_cached_tokens=(
+                get_field(prompt_details, "cached_tokens") if prompt_details is not None else None
+            ),
             finish_reason=getattr(choice, "finish_reason", None),
         )

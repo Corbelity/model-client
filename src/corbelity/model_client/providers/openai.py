@@ -12,16 +12,38 @@ shadowing -- the same arrangement `providers/anthropic.py` already uses.
 from __future__ import annotations
 
 import base64
-from typing import TYPE_CHECKING, ClassVar, cast
+import io
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..client import get_field, load_sdk
 from ..errors import ModelClientError
-from ..media import MediaResult, sniff_audio_mime, sniff_image_mime
+from ..media import ImageInput, MediaResult, sniff_audio_mime, sniff_image_mime
 from ..registry import ProviderSpec, get_spec
 from .openai_compatible import OpenAICompatibleClient
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     from openai import OpenAI
+
+# The edit endpoint is a multipart upload, so each reference arrives as a FILE, not as
+# bytes or base64. The SDK reads the filename off the object's `.name`, and the API infers
+# the part's content type from its extension -- a file-like object without one is rejected,
+# which is an unobvious failure worth keeping in one place.
+_MIME_SUFFIXES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+
+
+def _as_upload(image: ImageInput, index: int) -> io.BytesIO:
+    upload = io.BytesIO(image.data)
+    suffix = _MIME_SUFFIXES.get(image.mime_type, ".png")
+    # The caller's own filename when there is one, because it is what makes a failed
+    # request legible in a provider dashboard; a positional fallback otherwise.
+    name = image.name or f"reference-{index}{suffix}"
+    upload.name = name if name.lower().endswith(suffix) else f"{name}{suffix}"
+    return upload
 
 
 class OpenAIClient(OpenAICompatibleClient):
@@ -46,9 +68,24 @@ class OpenAIClient(OpenAICompatibleClient):
             api_key=self._resolve_key(),
         ))
 
-    def _invoke_image(self, prompt: str) -> MediaResult:
-        response = self._client.images.generate(model=self._model, prompt=prompt, n=1)
+    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...]) -> MediaResult:
+        # Reference images change the ENDPOINT, not just the payload: OpenAI's image
+        # models take them through images.edit, while images.generate is text-only. The
+        # response shape is identical either way, so only the call differs.
+        if images:
+            response = self._client.images.edit(
+                model=self._model,
+                prompt=prompt,
+                # A list even for one image: the edit endpoint accepts several for the
+                # gpt-image family, and a single-vs-list branch here would be one more
+                # thing to get wrong.
+                image=[_as_upload(image, index) for index, image in enumerate(images)],
+            )
+        else:
+            response = self._client.images.generate(model=self._model, prompt=prompt, n=1)
+        return self._parse_image_response(response)
 
+    def _parse_image_response(self, response: Any) -> MediaResult:
         # `data` can be absent entirely when a request is filtered.
         entries = getattr(response, "data", None) or []
         if not entries:
@@ -72,6 +109,10 @@ class OpenAIClient(OpenAICompatibleClient):
 
         data = base64.b64decode(encoded)
         usage = getattr(response, "usage", None)
+        # The component split of the input, when reported. Read through get_field twice
+        # because the details arrive as a nested object on some SDK versions and a plain
+        # dict on others; a provider that reports no details leaves all three as None.
+        details = get_field(usage, "input_tokens_details") if usage is not None else None
         return MediaResult(
             data=data,
             # The image endpoint's output format is a request option and models differ on
@@ -80,6 +121,11 @@ class OpenAIClient(OpenAICompatibleClient):
             prompt_tokens=get_field(usage, "input_tokens") if usage is not None else None,
             completion_tokens=get_field(usage, "output_tokens") if usage is not None else None,
             total_tokens=get_field(usage, "total_tokens") if usage is not None else None,
+            input_text_tokens=get_field(details, "text_tokens") if details is not None else None,
+            input_image_tokens=get_field(details, "image_tokens") if details is not None else None,
+            input_cached_tokens=(
+                get_field(details, "cached_tokens") if details is not None else None
+            ),
         )
 
     def _invoke_speech(self, text: str) -> MediaResult:

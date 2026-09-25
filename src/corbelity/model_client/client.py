@@ -31,6 +31,8 @@ from .errors import (
     MissingBaseUrlError,
     MissingCredentialsError,
     MissingDependencyError,
+    TooManyImagesError,
+    UnsupportedImageInputError,
     UnsupportedModalityError,
 )
 from .media import (
@@ -238,9 +240,17 @@ class ModelClient[ClientT](ABC):
         TypeError at import time is strictly better than that."""
         ...
 
-    def _invoke_image(self, prompt: str) -> MediaResult:
+    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...]) -> MediaResult:
         """Overridden only by providers that generate images; the default keeps the
-        contract honest for the rest."""
+        contract honest for the rest.
+
+        `images` are reference images to condition generation on, already validated and
+        normalized to a tuple by generate_image() -- never None. Not defaulted, for the
+        same reason `_invoke()`'s parameters are not: a provider that silently dropped a
+        reference would return a confident generation that ignored it, and a TypeError at
+        import is strictly better than that. A provider reaching this method with a
+        non-empty tuple is a bug -- generate_image() rejects reference images for any
+        service whose spec does not declare image_input."""
         raise UnsupportedModalityError(self.SPEC.name, IMAGE, self.SPEC.modalities)
 
     def _invoke_speech(self, text: str) -> MediaResult:
@@ -341,12 +351,46 @@ class ModelClient[ClientT](ABC):
             )
         return result.text
 
-    def generate_image(self, prompt: str) -> MediaResult:
-        """Text-to-image. Returns raw bytes plus the MIME type needed to render them."""
+    def generate_image(self, prompt: str,
+                       images: Sequence[ImageInput] | None = None) -> MediaResult:
+        """Text-to-image. Returns raw bytes plus the MIME type needed to render them.
+
+        `images` are REFERENCE images to condition the generation on -- a character sheet,
+        a set, a prop -- so a face or a place stays the same between generations. They are
+        input to the model, the mirror of the bytes coming back. Not every service can
+        take them; ask its spec, or catch UnsupportedImageInputError.
+
+        Validation runs before the provider is touched, and the no-images call is exactly
+        what it was before this parameter existed."""
         self._require(IMAGE)
-        result = self._run(IMAGE, lambda: self._invoke_image(prompt), {"prompt": prompt})
+        pictures = validate_images(images)
+        self._require_image_input(pictures)
+        request: dict[str, Any] = {"prompt": prompt}
+        if pictures:
+            # Only recorded when something was actually sent, matching complete(). The
+            # trace writer already turns an `images` key into artifact files on disk, so
+            # this needs nothing further to keep bytes out of the JSONL.
+            request["images"] = list(pictures)
+        result = self._run(IMAGE, lambda: self._invoke_image(prompt, pictures), request)
         self._log_media(IMAGE, prompt, result)
         return result
+
+    def _require_image_input(self, images: tuple[ImageInput, ...]) -> None:
+        """Gate reference images on the PROVIDER's declared capability and cap.
+
+        Not on the catalog's per-model accepts_images flag: the catalog is descriptive and
+        gates nothing (DESIGN.md §6), so a model missing from it must still work. The cap
+        is checked here rather than in validate_images() for the complementary reason --
+        a provider's published API limit is a fact about that provider, while a count
+        limit in shared validation would be policy, which belongs at the caller's own
+        boundary."""
+        if not images:
+            return
+        if not self.SPEC.image_input:
+            raise UnsupportedImageInputError(self.SPEC.name)
+        maximum = self.SPEC.max_reference_images
+        if maximum is not None and len(images) > maximum:
+            raise TooManyImagesError(self.SPEC.name, len(images), maximum)
 
     def generate_speech(self, text: str) -> MediaResult:
         """Text-to-speech. Returns raw audio bytes plus the sniffed MIME type."""

@@ -234,6 +234,29 @@ wrong in a way that only shows up on one file format.
 policy and belong at the HTTP boundary where policy already lives. A script sending one
 40 MB scan is doing something legitimate that a UI's limits should not forbid.
 
+### A cap that is not policy
+
+Reference images to `generate_image()` look like a counter-example: there *is* a count
+cap, and it fires inside the client. The distinction is where the number comes from.
+
+A limit in `validate_images()` would be a number this library chose — policy, and
+somebody else's to set. `ProviderSpec.max_reference_images` is a number the **provider
+published**; sending more is not a policy violation, it is a request that cannot succeed.
+Checking it here saves a multi-megabyte upload that was always going to be rejected, and
+the caller's own limits still sit above, untouched.
+
+That is also why it lives on the spec rather than on a client class. Three services share
+`OpenAICompatibleClient` and their limits differ, so a class constant would be wrong for
+at least two of them — and a published API limit is data that changes on the vendor's
+schedule, which is the same argument that put credential names and the model catalog in
+data.
+
+The capability flag beside it, `image_input`, answers a different question: not "how many"
+but "can this client route them at all". It gates on the provider rather than on the
+catalog's per-model `accepts_images`, because the catalog is descriptive and gates nothing
+(§6) — a model missing from it has to keep working. `accepts_images` stays advisory, for
+UIs deciding what to offer.
+
 ## 8. Configuration is accepted, never reached for
 
 A library never reads the world; it accepts the world.

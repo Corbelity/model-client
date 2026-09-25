@@ -35,6 +35,38 @@ class UnsupportedModalityError(ModelClientError):
         self.supported = supported
 
 
+class UnsupportedImageInputError(ModelClientError):
+    """A provider was asked to condition image generation on reference images, and this
+    client cannot route them to that service.
+
+    Mirrors UnsupportedModalityError: raised BEFORE any network call, naming the service,
+    so the caller gets a precise message instead of a provider-specific 400 -- or worse,
+    a successful generation that silently ignored the references."""
+
+    def __init__(self, service: str) -> None:
+        super().__init__(
+            f"Service {service!r} cannot take reference images for image generation. "
+            "Call generate_image() without images, or use a service that supports them."
+        )
+        self.service = service
+
+
+class TooManyImagesError(ModelClientError, ValueError):
+    """More reference images than the provider accepts.
+
+    Checked here rather than left to the provider because the alternative is uploading
+    several megabytes and then being rejected for it."""
+
+    def __init__(self, service: str, count: int, maximum: int) -> None:
+        super().__init__(
+            f"Service {service!r} accepts at most {maximum} reference image(s); "
+            f"{count} were supplied."
+        )
+        self.service = service
+        self.count = count
+        self.maximum = maximum
+
+
 class MissingCredentialsError(ModelClientError, ValueError):
     """No API key was found for a provider that requires one.
 

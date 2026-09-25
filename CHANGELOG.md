@@ -15,6 +15,13 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- Reference images as input to image generation: `generate_image(prompt, images=None)`,
+  mirroring `complete()` — same `ImageInput` type, same validation, same immutable-tuple
+  contract. Capability is declared per provider by two new `ProviderSpec` fields,
+  `image_input` and `max_reference_images`; a service without it raises
+  `UnsupportedImageInputError` before any network call, and exceeding the cap raises
+  `TooManyImagesError` before the upload. On OpenAI, references switch the call from
+  `images.generate` to `images.edit`. Text-only generation is unchanged. (SA-347)
 - Component breakdown of input tokens on `ModelResult`: `input_text_tokens`,
   `input_image_tokens` and `input_cached_tokens`, all defaulting to `None`. The
   components bill at different rates, so a caller costing a call from the flat
@@ -84,6 +91,13 @@ Everything below becomes `0.1.0` when the first tag is cut.
 - Test suite covering validation, sniffing, configuration, credential resolution, the
   catalog, the registry, service filtering and the observability contract, using a fake
   provider rather than network calls.
+
+### Changed
+
+- `ModelClient._invoke_image()` now takes `(prompt, images)`. Protected, but external
+  provider subclasses override it, so this breaks them — permitted while pre-1.0 and
+  noted here rather than discovered. `images` is not defaulted, for the same reason
+  `_invoke()`'s parameters are not.
 
 ### Fixed
 

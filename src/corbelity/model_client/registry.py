@@ -55,6 +55,17 @@ class ProviderSpec:
     # endpoints that are machine-specific and have no sensible default.
     requires_base_url: bool = False
     modalities: frozenset[str] = field(default_factory=lambda: frozenset({TEXT}))
+    # Whether this provider can carry REFERENCE IMAGES into image generation -- a fact
+    # about this client's implementation, not about the vendor: it is True once the
+    # provider knows how to route them. Gating on this rather than on the catalog's
+    # per-model accepts_images flag is deliberate. The catalog is descriptive and gates
+    # nothing (DESIGN.md §6); this is capability.
+    image_input: bool = False
+    # Provider cap on how many reference images one call may carry. None means no cap
+    # this client knows of. Lives here rather than on a client class because three
+    # services share OpenAICompatibleClient and their caps differ -- and because a
+    # published API limit is data that changes on the vendor's schedule.
+    max_reference_images: int | None = None
     # Alternative spellings folded onto `name`, so a stale config or a hand-edited
     # catalog entry does not fail with "unsupported service".
     aliases: tuple[str, ...] = ()
@@ -105,6 +116,10 @@ BUILTIN_SPECS: tuple[ProviderSpec, ...] = (
         # The only provider here that does all three natively -- but images and speech
         # come from separate SDK surfaces, not from chat completions.
         modalities=frozenset({TEXT, IMAGE, SOUND}),
+        image_input=True,
+        # OpenAI's documented ceiling for reference images on an edit request. In data so
+        # a change on their side is an edit here rather than a release.
+        max_reference_images=16,
         aliases=("open_ai",),
     ),
     ProviderSpec(

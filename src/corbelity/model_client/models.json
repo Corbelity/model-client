@@ -30,8 +30,8 @@
         "name": "GPT-Image-2.5 Flare",
         "service": "openai",
         "modality": "image",
-        "description": "Fast image generation via the OpenAI images endpoint.",
-        "accepts_images": false
+        "description": "Fast image generation; accepts reference images to condition output.",
+        "accepts_images": true
     },
     {
         "id": "gpt-4o-mini-tts",

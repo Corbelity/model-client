@@ -54,7 +54,7 @@ class FakeClient(ModelClient[dict[str, Any]]):
             raise type(self).next_error
         return type(self).next_result
 
-    def _invoke_image(self, prompt: str) -> MediaResult:
+    def _invoke_image(self, prompt: str, images: Any) -> MediaResult:
         return MediaResult(data=b"\x89PNG", mime_type="image/png")
 
 

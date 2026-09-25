@@ -32,21 +32,32 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-# Floor, not a preference: the Messages API withdrew temperature/top_p/top_k, and they are
-# absent from MessageCreateParams from 1.7 on. This client does not send them, so an older
-# SDK would still work -- but the floor keeps the code and the installed surface honest
-# rather than leaving the reason for their absence undiscoverable.
+# Floors are the versions this package is actually tested against. Deliberately no upper
+# caps: this is a library, and a cap blocks downstream projects that need a newer SDK for
+# reasons of their own -- a cost paid by someone else, to guard against a break that may
+# never come.
+#
+# The floors matter more than they look. They were previously well below what anyone runs
+# (openai>=1.50 against an installed 3.x, huggingface-hub>=0.26 against 1.x), which is not
+# a conservative floor but a false claim: a resolver picking the minimum would install a
+# version nothing here has been run against.
+#
+# What an uncapped range costs is a break arriving at call time rather than install time.
+# The Anthropic Messages API withdrew temperature, top_p and top_k, and passing one became
+# a TypeError from the SDK before anything reached the service. Nothing in CI sees that
+# until it runs against the new SDK, so the way this stays caught is testing against
+# current releases -- not a version range. If one breaks, raise the floor past it.
 anthropic = ["anthropic>=1.7"]
 # OpenRouter, OpenAI and Gemini all speak chat completions through the same SDK. They get
 # separate extras anyway, so `pip install corbelity-model-client[gemini]` works and the
 # install hint on a missing dependency names the extra the caller actually asked for.
-openrouter = ["openai>=1.50"]
-openai = ["openai>=1.50"]
-gemini = ["openai>=1.50"]
-ollama = ["ollama>=0.4"]
+openrouter = ["openai>=3.16"]
+openai = ["openai>=3.16"]
+gemini = ["openai>=3.16"]
+ollama = ["ollama>=0.6"]
 # Pillow is not optional for HuggingFace: text_to_image returns a PIL.Image that the
 # provider re-encodes to PNG bytes so callers never need Pillow themselves.
-huggingface = ["huggingface-hub>=0.26", "pillow>=10.0"]
+huggingface = ["huggingface-hub>=1.32", "pillow>=10.0"]
 all = [
     "corbelity-model-client[anthropic]",
     "corbelity-model-client[openrouter]",

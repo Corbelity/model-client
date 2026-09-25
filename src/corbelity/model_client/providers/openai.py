@@ -72,6 +72,10 @@ class OpenAIClient(OpenAICompatibleClient):
 
         data = base64.b64decode(encoded)
         usage = getattr(response, "usage", None)
+        # The component split of the input, when reported. Read through get_field twice
+        # because the details arrive as a nested object on some SDK versions and a plain
+        # dict on others; a provider that reports no details leaves all three as None.
+        details = get_field(usage, "input_tokens_details") if usage is not None else None
         return MediaResult(
             data=data,
             # The image endpoint's output format is a request option and models differ on
@@ -80,6 +84,11 @@ class OpenAIClient(OpenAICompatibleClient):
             prompt_tokens=get_field(usage, "input_tokens") if usage is not None else None,
             completion_tokens=get_field(usage, "output_tokens") if usage is not None else None,
             total_tokens=get_field(usage, "total_tokens") if usage is not None else None,
+            input_text_tokens=get_field(details, "text_tokens") if details is not None else None,
+            input_image_tokens=get_field(details, "image_tokens") if details is not None else None,
+            input_cached_tokens=(
+                get_field(details, "cached_tokens") if details is not None else None
+            ),
         )
 
     def _invoke_speech(self, text: str) -> MediaResult:

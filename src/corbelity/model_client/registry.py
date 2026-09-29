@@ -66,6 +66,19 @@ class ProviderSpec:
     # services share OpenAICompatibleClient and their caps differ -- and because a
     # published API limit is data that changes on the vendor's schedule.
     max_reference_images: int | None = None
+    # Image OUTPUT controls. Per-provider rather than per-model because they describe an
+    # endpoint; if models within one provider ever diverge, these move to the catalog the
+    # way supports_sampling did.
+    #
+    # Sizes this service offers. They drive aspect_ratio resolution and answer "what can
+    # this service frame?". Non-resolution values ("auto") are allowed and never match a
+    # ratio. Empty plus image_custom_size False means size cannot be requested at all.
+    image_sizes: tuple[str, ...] = ()
+    # True when the provider documents an arbitrary WIDTHxHEIGHT, so a well-formed size
+    # outside image_sizes is passed through rather than refused.
+    image_custom_size: bool = False
+    # Quality values the provider accepts. Empty means quality cannot be requested.
+    image_qualities: tuple[str, ...] = ()
     # Alternative spellings folded onto `name`, so a stale config or a hand-edited
     # catalog entry does not fail with "unsupported service".
     aliases: tuple[str, ...] = ()
@@ -120,6 +133,23 @@ BUILTIN_SPECS: tuple[ProviderSpec, ...] = (
         # OpenAI's documented ceiling for reference images on an edit request. In data so
         # a change on their side is an edit here rather than a release.
         max_reference_images=16,
+        # Documented sizes, NOT a closed set -- see image_custom_size below. Largest
+        # 16:9 and 9:16 entries included because true 16:9 is natively supported, so a
+        # caller wanting it never has to crop or pad.
+        image_sizes=(
+            "auto",
+            "1024x1024", "1536x1024", "1024x1536",
+            "2048x2048", "2048x1152", "3840x2160", "2160x3840",
+        ),
+        # `size` also accepts an arbitrary WIDTHxHEIGHT, and the narrower enumeration on
+        # the EDIT endpoint looks like DALL-E-era residue rather than a live constraint.
+        # Enforcing that narrow list would refuse 16:9 on exactly the path that carries
+        # reference images, so an explicit well-formed size is passed through and the
+        # provider gets to be the one that rejects it, if it does.
+        image_custom_size=True,
+        # The edit endpoint omits the DALL-E-era "hd", and the response only ever reports
+        # these, so the legacy values are not worth exposing.
+        image_qualities=("auto", "low", "medium", "high", "xhigh", "max"),
         aliases=("open_ai",),
     ),
     ProviderSpec(

@@ -257,6 +257,37 @@ catalog's per-model `accepts_images`, because the catalog is descriptive and gat
 (§6) — a model missing from it has to keep working. `accepts_images` stays advisory, for
 UIs deciding what to offer.
 
+### Refuse, never substitute
+
+Output settings raise rather than approximate. A ratio a service cannot frame, a malformed
+size, an unknown quality level: each one raises before the provider is touched, and none
+of them quietly becomes a different request.
+
+The reason is that substitution fails **invisibly**. An application that asked for 16:9
+and silently got 1:1 believes it has 16:9 frames, and discovers otherwise much later by
+looking at them — the caller's explicit instruction overridden by something it could not
+see. An error costs one exception; a substitution costs trust in every image already
+produced.
+
+Two consequences worth noting because they look inconsistent and are not:
+
+**`aspect_ratio` resolves to the smallest matching size.** That is a choice made on the
+caller's behalf, which sits close to substitution — the difference is that it is
+documented, deterministic, and cheap. Pixels drive cost, so silently *growing* a request
+would be the expensive surprise; a caller who wants the large resolution names a `size` and
+gets exactly it. Matching is exact: 16:9 does not match 1920x1081.
+
+**A custom size is passed through rather than validated against a list.** OpenAI documents
+an arbitrary `WIDTHxHEIGHT`, and the narrower enumeration on its edit endpoint looks like
+DALL·E-era residue — enforcing it would refuse 16:9 on precisely the path that carries
+reference images. So a well-formed size goes through and the provider gets to be the one
+that rejects it, if it does. That is passthrough, not approval, and it is still not a
+substitution: what the caller asked for is what gets sent.
+
+The request settings are recorded in the trace as *asked for*, separately from what the
+response says was *produced* (§6). Keeping the two apart in one record is what makes a
+divergence detectable at all.
+
 ## 8. Configuration is accepted, never reached for
 
 A library never reads the world; it accepts the world.

@@ -34,15 +34,21 @@ from .errors import (
     TooManyImagesError,
     UnsupportedImageInputError,
     UnsupportedModalityError,
+    UnsupportedQualityError,
+    UnsupportedSizeError,
 )
 from .media import (
     IMAGE,
     SOUND,
     TEXT,
     ImageInput,
+    ImageOptions,
     LLMResult,
     MediaResult,
     ModelResult,
+    aspect_ratios_of,
+    parse_size,
+    sizes_for_ratio,
     validate_images,
 )
 from .messages import History, Message, validate_history
@@ -240,7 +246,8 @@ class ModelClient[ClientT](ABC):
         TypeError at import time is strictly better than that."""
         ...
 
-    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...]) -> MediaResult:
+    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...],
+                      options: ImageOptions) -> MediaResult:
         """Overridden only by providers that generate images; the default keeps the
         contract honest for the rest.
 
@@ -250,7 +257,13 @@ class ModelClient[ClientT](ABC):
         reference would return a confident generation that ignored it, and a TypeError at
         import is strictly better than that. A provider reaching this method with a
         non-empty tuple is a bug -- generate_image() rejects reference images for any
-        service whose spec does not declare image_input."""
+        service whose spec does not declare image_input.
+
+        `options` carries the requested output settings, already validated against this
+        service. A setting left as None was not requested and must be OMITTED from the
+        provider call, so the provider's own default applies rather than one invented
+        here. Not defaulted, for the same reason `images` is not: a provider that
+        silently ignored a requested size would return a confidently wrong image."""
         raise UnsupportedModalityError(self.SPEC.name, IMAGE, self.SPEC.modalities)
 
     def _invoke_speech(self, text: str) -> MediaResult:
@@ -352,7 +365,11 @@ class ModelClient[ClientT](ABC):
         return result.text
 
     def generate_image(self, prompt: str,
-                       images: Sequence[ImageInput] | None = None) -> MediaResult:
+                       images: Sequence[ImageInput] | None = None,
+                       *,
+                       aspect_ratio: str | None = None,
+                       size: str | None = None,
+                       quality: str | None = None) -> MediaResult:
         """Text-to-image. Returns raw bytes plus the MIME type needed to render them.
 
         `images` are REFERENCE images to condition the generation on -- a character sheet,
@@ -360,20 +377,90 @@ class ModelClient[ClientT](ABC):
         input to the model, the mirror of the bytes coming back. Not every service can
         take them; ask its spec, or catch UnsupportedImageInputError.
 
-        Validation runs before the provider is touched, and the no-images call is exactly
-        what it was before this parameter existed."""
+        `aspect_ratio` ("16:9") is the framing decision as a director states it; the client
+        resolves it to a concrete resolution on this service. `size` ("2048x1152") names
+        the pixels outright. They are MUTUALLY EXCLUSIVE -- passing both is an error rather
+        than a precedence puzzle. `quality` is independent of both.
+
+        None of this is ever silently substituted: a request this service cannot honour
+        raises. Ask ahead with supported_image_sizes(), supported_aspect_ratios() and
+        supported_image_qualities(), none of which need a client or a credential.
+
+        Everything is validated before the provider is touched, and a call passing none of
+        these behaves exactly as it did before the parameters existed."""
         self._require(IMAGE)
         pictures = validate_images(images)
         self._require_image_input(pictures)
+        options = self._resolve_image_options(
+            aspect_ratio=aspect_ratio, size=size, quality=quality
+        )
         request: dict[str, Any] = {"prompt": prompt}
         if pictures:
             # Only recorded when something was actually sent, matching complete(). The
             # trace writer already turns an `images` key into artifact files on disk, so
             # this needs nothing further to keep bytes out of the JSONL.
             request["images"] = list(pictures)
-        result = self._run(IMAGE, lambda: self._invoke_image(prompt, pictures), request)
+        if options:
+            # Recorded as what was ASKED FOR. What came back is on the result, and keeping
+            # the two apart in the record is what lets anyone notice they differ.
+            asked: dict[str, Any] = {"size": options.size, "quality": options.quality}
+            if aspect_ratio is not None:
+                asked["aspect_ratio"] = aspect_ratio
+            request["requested"] = {k: v for k, v in asked.items() if v is not None}
+        result = self._run(
+            IMAGE, lambda: self._invoke_image(prompt, pictures, options), request
+        )
         self._log_media(IMAGE, prompt, result)
         return result
+
+    def _resolve_image_options(self, *, aspect_ratio: str | None, size: str | None,
+                               quality: str | None) -> ImageOptions:
+        """Turn requested output settings into what this provider will be sent.
+
+        Every rejection here happens before the provider is touched, and none of them
+        substitutes. Refusing costs one error; substituting costs an application that
+        believes it has something it does not."""
+        if aspect_ratio is not None and size is not None:
+            raise ValueError(
+                "aspect_ratio and size are mutually exclusive -- pass one, not both "
+                f"(got aspect_ratio={aspect_ratio!r}, size={size!r})."
+            )
+
+        resolved = size
+        if aspect_ratio is not None:
+            candidates = sizes_for_ratio(aspect_ratio, self.SPEC.image_sizes)
+            if not candidates:
+                raise UnsupportedSizeError(
+                    self.SPEC.name, aspect_ratio, aspect_ratios_of(self.SPEC.image_sizes)
+                )
+            # Smallest first. Pixels drive cost, and the cheap end is the safe default to
+            # pick on the caller's behalf: a storyboard thumbnail at 4K is money spent on
+            # an image nobody will look at closely, while a caller who wants the large one
+            # names a size and gets exactly it.
+            resolved = candidates[0]
+
+        if resolved is not None:
+            self._require_size(resolved)
+        if quality is not None:
+            self._require_quality(quality)
+        return ImageOptions(size=resolved, quality=quality)
+
+    def _require_size(self, size: str) -> None:
+        spec = self.SPEC
+        if size in spec.image_sizes:
+            return
+        # A well-formed resolution goes through on a service that documents custom sizes.
+        # This is passthrough, not approval: if the provider refuses it, that refusal is
+        # what the caller sees -- which is still better than this client guessing.
+        if spec.image_custom_size and parse_size(size) is not None:
+            return
+        raise UnsupportedSizeError(spec.name, size, spec.image_sizes)
+
+    def _require_quality(self, quality: str) -> None:
+        if quality not in self.SPEC.image_qualities:
+            raise UnsupportedQualityError(
+                self.SPEC.name, quality, self.SPEC.image_qualities
+            )
 
     def _require_image_input(self, images: tuple[ImageInput, ...]) -> None:
         """Gate reference images on the PROVIDER's declared capability and cap.

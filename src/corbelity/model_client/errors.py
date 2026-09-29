@@ -67,6 +67,41 @@ class TooManyImagesError(ModelClientError, ValueError):
         self.maximum = maximum
 
 
+class UnsupportedSizeError(ModelClientError, ValueError):
+    """A size or aspect ratio this client will not send to that service.
+
+    Raised, never substituted. A silent nearest-match means the application believes it
+    has 16:9 frames when it does not, and finds that out much later by looking at them --
+    the caller's explicit instruction overridden by something it cannot see."""
+
+    def __init__(self, service: str, requested: str, supported: Sequence[str]) -> None:
+        offered = ", ".join(supported) if supported else "(none)"
+        super().__init__(
+            f"Service {service!r} cannot produce {requested!r}. It offers: {offered}."
+        )
+        self.service = service
+        self.requested = requested
+        self.supported = tuple(supported)
+
+
+class UnsupportedQualityError(ModelClientError, ValueError):
+    """A quality level the service does not accept, or a quality request to a service
+    that has no such control at all."""
+
+    def __init__(self, service: str, requested: str, supported: Sequence[str]) -> None:
+        offered = (
+            ", ".join(supported) if supported
+            else "(none -- this service has no quality control)"
+        )
+        super().__init__(
+            f"Service {service!r} does not accept quality {requested!r}. "
+            f"It accepts: {offered}."
+        )
+        self.service = service
+        self.requested = requested
+        self.supported = tuple(supported)
+
+
 class MissingCredentialsError(ModelClientError, ValueError):
     """No API key was found for a provider that requires one.
 

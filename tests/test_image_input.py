@@ -81,7 +81,8 @@ class NoInputClient(ModelClient[object]):
     def _invoke(self, system: str, user: str, history: Any, images: Any) -> Any:
         raise NotImplementedError
 
-    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...]) -> MediaResult:
+    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...],
+                      options: Any) -> MediaResult:
         self.invoked = True
         return MediaResult(data=PNG, mime_type="image/png")
 

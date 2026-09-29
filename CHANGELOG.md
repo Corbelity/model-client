@@ -15,6 +15,19 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- Output size, aspect ratio and quality for image generation:
+  `generate_image(prompt, images=None, *, aspect_ratio=None, size=None, quality=None)`.
+  `aspect_ratio` ("16:9") is the framing decision as stated and resolves to a concrete
+  resolution — the smallest at that ratio, since pixels drive cost and a caller wanting
+  more names a `size`. `aspect_ratio` and `size` are mutually exclusive. Nothing is
+  silently substituted: `UnsupportedSizeError` and `UnsupportedQualityError` raise before
+  any network call, and `supported_image_sizes()`, `supported_aspect_ratios()` and
+  `supported_image_qualities()` answer without a client or a credential. Declared per
+  provider by three new `ProviderSpec` fields (`image_sizes`, `image_custom_size`,
+  `image_qualities`); OpenAI offers true 16:9 natively at 2048x1152 and 3840x2160. The
+  trace records the requested settings separately from the produced ones. Calls passing
+  none of these are unchanged. (SA-355)
+
 - The image response is now reported rather than discarded. `MediaResult` carries the
   `size`, `quality`, `output_format`, `background` and `created` the provider says it
   **used** — read from the response, never echoed from the request — plus `extra` for
@@ -104,7 +117,12 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Changed
 
-- `ModelClient._invoke_image()` now takes `(prompt, images)`. Protected, but external
+- `ModelClient._invoke_image()` now takes `(prompt, images, options)`, where `options` is
+  an `ImageOptions`. An object rather than further positional parameters, because each
+  image capability that lands wants another setting and the seam should stop churning: a
+  field added to `ImageOptions` reaches every provider without another signature change.
+  Breaks external provider subclasses, which is permitted pre-1.0. (SA-355)
+- `ModelClient._invoke_image()` previously took `(prompt, images)`. Protected, but external
   provider subclasses override it, so this breaks them — permitted while pre-1.0 and
   noted here rather than discovered. `images` is not defaulted, for the same reason
   `_invoke()`'s parameters are not.

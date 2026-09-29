@@ -6,7 +6,16 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..client import ModelClient, get_field, load_sdk
-from ..media import IMAGE, SOUND, TEXT, ImageInput, LLMResult, MediaResult, sniff_audio_mime
+from ..media import (
+    IMAGE,
+    SOUND,
+    TEXT,
+    ImageInput,
+    ImageOptions,
+    LLMResult,
+    MediaResult,
+    sniff_audio_mime,
+)
 from ..messages import Message
 from ..registry import ProviderSpec, get_spec
 from . import openai_user_content
@@ -74,10 +83,12 @@ class HuggingFaceClient(ModelClient["InferenceClient"]):
             finish_reason=getattr(choice, "finish_reason", None),
         )
 
-    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...]) -> MediaResult:
-        # `images` is always empty here: the huggingface spec does not declare
-        # image_input, so generate_image() rejects references before reaching a provider.
-        # The parameter is present because the seam requires it, not because it is used.
+    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...],
+                      options: ImageOptions) -> MediaResult:
+        # `images` and `options` are always empty here: the huggingface spec declares
+        # neither image_input nor any size or quality, so generate_image() rejects all of
+        # them before reaching a provider. The parameters are present because the seam
+        # requires them, not because they are used.
         # text_to_image returns a PIL.Image; re-encode to PNG bytes so the caller never
         # needs Pillow to hand the result on.
         image = self._call(IMAGE, self._client.text_to_image, prompt, model=self._model)

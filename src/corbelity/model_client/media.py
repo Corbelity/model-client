@@ -7,8 +7,10 @@ in ways that surface as opaque 400s if you guess.
 from __future__ import annotations
 
 import base64
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from math import gcd
 from typing import Any
 
 TEXT = "text"
@@ -121,6 +123,99 @@ class ImageInput:
         """Build from raw bytes, sniffing the type when the caller does not know it --
         which is the common case for a browser upload or a fetched URL."""
         return cls(data=data, mime_type=mime_type or sniff_image_mime(data), name=name)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ImageOptions:
+    """Output settings for one image generation.
+
+    An object rather than more parameters on the provider seam: every image capability
+    that lands wants another setting, and a field added here reaches every provider
+    without breaking `_invoke_image()` again.
+
+    None means NOT REQUESTED. The key is then omitted from the provider call entirely, so
+    the provider's own default applies rather than a value this package invented.
+    """
+
+    size: str | None = None
+    quality: str | None = None
+
+    def __bool__(self) -> bool:
+        """True when anything was actually requested, so callers can skip the whole
+        settings branch on a plain generation."""
+        return self.size is not None or self.quality is not None
+
+
+# Deliberately strict: a size is WIDTHxHEIGHT and a ratio is W:H. Anything else is not
+# coerced into one, because a guess here becomes a silently wrong image later.
+_SIZE_PATTERN = re.compile(r"^(\d+)\s*[x\u00d7]\s*(\d+)$", re.IGNORECASE)
+_RATIO_PATTERN = re.compile(r"^(\d+)\s*[:/]\s*(\d+)$")
+
+
+def parse_size(size: str) -> tuple[int, int] | None:
+    """"WIDTHxHEIGHT" -> (width, height), or None when the string is not a resolution.
+
+    None rather than a raise, because "auto" is a legitimate size for several providers:
+    a string that is not a resolution is not necessarily an error, and only the caller
+    knows whether this one is."""
+    match = _SIZE_PATTERN.match(size.strip())
+    if match is None:
+        return None
+    width, height = int(match.group(1)), int(match.group(2))
+    return (width, height) if width > 0 and height > 0 else None
+
+
+def parse_aspect_ratio(ratio: str) -> tuple[int, int] | None:
+    """"16:9" -> (16, 9), reduced. None when the string is not a ratio."""
+    match = _RATIO_PATTERN.match(ratio.strip())
+    if match is None:
+        return None
+    width, height = int(match.group(1)), int(match.group(2))
+    if width <= 0 or height <= 0:
+        return None
+    divisor = gcd(width, height)
+    return width // divisor, height // divisor
+
+
+def size_ratio(size: str) -> tuple[int, int] | None:
+    """The reduced ratio of a resolution: "2048x1152" -> (16, 9)."""
+    parsed = parse_size(size)
+    if parsed is None:
+        return None
+    width, height = parsed
+    divisor = gcd(width, height)
+    return width // divisor, height // divisor
+
+
+def sizes_for_ratio(ratio: str, sizes: Sequence[str]) -> tuple[str, ...]:
+    """Every size in `sizes` at EXACTLY `ratio`, smallest first by pixel count.
+
+    Exactly: 16:9 does not match 1920x1081. A near-match is precisely the silent
+    substitution this whole path exists to avoid. Entries that are not resolutions
+    ("auto") simply never match."""
+    wanted = parse_aspect_ratio(ratio)
+    if wanted is None:
+        return ()
+
+    def pixels(size: str) -> int:
+        parsed = parse_size(size)
+        return parsed[0] * parsed[1] if parsed else 0
+
+    matches = [size for size in sizes if size_ratio(size) == wanted]
+    return tuple(sorted(matches, key=pixels))
+
+
+def aspect_ratios_of(sizes: Sequence[str]) -> tuple[str, ...]:
+    """The distinct ratios reachable from a list of sizes, in the order they appear.
+
+    Lets a caller ask what a service can frame before requesting it, rather than
+    discovering the answer from an exception."""
+    seen: dict[tuple[int, int], None] = {}
+    for size in sizes:
+        ratio = size_ratio(size)
+        if ratio is not None:
+            seen.setdefault(ratio, None)
+    return tuple(f"{width}:{height}" for width, height in seen)
 
 
 # Audio magic bytes -> MIME. TTS providers disagree on output container (Bark returns

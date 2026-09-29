@@ -172,6 +172,49 @@ never told about the limit after uploading several megabytes. Today only `openai
 supports references; on that path they switch the call from the images endpoint to the
 edit endpoint, which is handled for you.
 
+### Size, aspect ratio and quality
+
+Framing and quality are settings, not prompt text:
+
+```python
+client.generate_image("a wide establishing shot", aspect_ratio="16:9", quality="medium")
+client.generate_image("a poster",                 size="2048x2048", quality="max")
+```
+
+`aspect_ratio` is the framing decision as a director states it — the client resolves it to
+a concrete resolution on that service. `size` names the pixels outright. They are
+**mutually exclusive**; passing both raises rather than resolving a precedence puzzle.
+`quality` is independent of both, and omitting any of them leaves the provider's own
+default in place.
+
+When a ratio maps to several resolutions, `aspect_ratio` picks the **smallest**. Pixels
+drive cost, so the cheap end is the safer default to choose on your behalf — a storyboard
+thumbnail at 4K is money spent on an image nobody will examine closely. Name a `size` when
+you want the large one.
+
+**Nothing is ever silently substituted.** A ratio the service cannot frame, a malformed
+size, or an unknown quality level raises `UnsupportedSizeError` / `UnsupportedQualityError`
+before any network call. A near-match would mean believing you have 16:9 frames and
+finding out much later by looking at them.
+
+Ask ahead, without a client or a credential:
+
+```python
+from corbelity.model_client import (
+    supported_aspect_ratios, supported_image_qualities, supported_image_sizes,
+)
+
+supported_aspect_ratios("openai")    # ('1:1', '3:2', '2:3', '16:9', '9:16')
+supported_image_qualities("openai")  # ('auto', 'low', 'medium', 'high', 'xhigh', 'max')
+supported_image_sizes("openai")      # the resolutions it offers, plus 'auto'
+```
+
+`supported_image_sizes` is what a service *offers*, not everything it will take: where a
+provider documents an arbitrary `WIDTHxHEIGHT` (OpenAI does), a well-formed size outside
+that list is passed through untouched rather than refused. That is passthrough, not
+approval — if the provider rejects it, you see the provider's refusal, which still beats
+this client guessing.
+
 ### Token usage, and what it costs
 
 Where a provider reports a breakdown of its input, `ModelResult` carries it alongside the

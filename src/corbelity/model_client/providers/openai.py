@@ -17,7 +17,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..client import get_field, load_sdk
 from ..errors import ModelClientError
-from ..media import ImageInput, MediaResult, sniff_audio_mime, sniff_image_mime
+from ..media import (
+    ImageInput,
+    ImageOptions,
+    MediaResult,
+    sniff_audio_mime,
+    sniff_image_mime,
+)
 from ..registry import ProviderSpec, get_spec
 from .openai_compatible import OpenAICompatibleClient
 
@@ -100,7 +106,16 @@ class OpenAIClient(OpenAICompatibleClient):
             api_key=self._resolve_key(),
         ))
 
-    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...]) -> MediaResult:
+    def _invoke_image(self, prompt: str, images: tuple[ImageInput, ...],
+                      options: ImageOptions) -> MediaResult:
+        # Omitted entirely when not requested, so the provider's own default applies
+        # rather than a value invented here. Both endpoints take both settings.
+        settings: dict[str, Any] = {}
+        if options.size is not None:
+            settings["size"] = options.size
+        if options.quality is not None:
+            settings["quality"] = options.quality
+
         # Reference images change the ENDPOINT, not just the payload: OpenAI's image
         # models take them through images.edit, while images.generate is text-only. The
         # response shape is identical either way, so only the call differs.
@@ -112,9 +127,12 @@ class OpenAIClient(OpenAICompatibleClient):
                 # gpt-image family, and a single-vs-list branch here would be one more
                 # thing to get wrong.
                 image=[_as_upload(image, index) for index, image in enumerate(images)],
+                **settings,
             )
         else:
-            response = self._client.images.generate(model=self._model, prompt=prompt, n=1)
+            response = self._client.images.generate(
+                model=self._model, prompt=prompt, n=1, **settings
+            )
         return self._parse_image_response(response)
 
     def _parse_image_response(self, response: Any) -> MediaResult:

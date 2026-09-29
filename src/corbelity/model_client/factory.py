@@ -15,6 +15,7 @@ from typing import Any
 from .catalog import ModelCatalog, load_catalog
 from .client import ModelClient
 from .config import ModelConfig, get_default_config
+from .media import aspect_ratios_of
 from .registry import DEFAULT_REGISTRY, ProviderSpec
 
 
@@ -49,6 +50,30 @@ def supported_modalities(service: str | None = None, *,
     """What `service` can produce -- lets a caller reject an impossible request before
     building a client, installing an SDK, or spending a network round trip."""
     return provider_spec(service, config=config).modalities
+
+
+def supported_image_sizes(service: str | None = None, *,
+                          config: ModelConfig | None = None) -> tuple[str, ...]:
+    """The sizes `service` offers for image generation.
+
+    Not necessarily exhaustive: a service whose spec sets image_custom_size also accepts
+    an arbitrary WIDTHxHEIGHT, so this is what it OFFERS rather than all it will take."""
+    return provider_spec(service, config=config).image_sizes
+
+
+def supported_aspect_ratios(service: str | None = None, *,
+                            config: ModelConfig | None = None) -> tuple[str, ...]:
+    """The ratios reachable via `aspect_ratio=` on `service`.
+
+    Lets a caller adapt deliberately -- pick a ratio the service can actually frame --
+    rather than discovering the answer from an UnsupportedSizeError."""
+    return aspect_ratios_of(provider_spec(service, config=config).image_sizes)
+
+
+def supported_image_qualities(service: str | None = None, *,
+                              config: ModelConfig | None = None) -> tuple[str, ...]:
+    """The quality levels `service` accepts. Empty means it has no quality control."""
+    return provider_spec(service, config=config).image_qualities
 
 
 def make_model_client(service: str | None = None, **kwargs: Any) -> ModelClient[Any]:

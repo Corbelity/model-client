@@ -7,8 +7,9 @@ in ways that surface as opaque 400s if you guess.
 from __future__ import annotations
 
 import base64
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any
 
 TEXT = "text"
 IMAGE = "image"
@@ -44,6 +45,13 @@ class ModelResult:
     input_image_tokens: int | None = None
     input_cached_tokens: int | None = None
 
+    # The same split on the other side of the call. Output tokens dominate the cost of a
+    # generated image ($30/M), and a caller pricing them as one undifferentiated figure
+    # cannot tell whether that figure is exact or an approximation. Named to mirror the
+    # input fields above so the two halves read symmetrically.
+    output_text_tokens: int | None = None
+    output_image_tokens: int | None = None
+
 
 @dataclass(kw_only=True)
 class LLMResult(ModelResult):
@@ -55,10 +63,39 @@ class LLMResult(ModelResult):
 @dataclass(kw_only=True)
 class MediaResult(ModelResult):
     """Generated image or audio. `data` is the raw payload; `mime_type` is what the
-    caller needs to render or store it (providers differ, so it is never assumed)."""
+    caller needs to render or store it (providers differ, so it is never assumed).
+
+    The fields below report what the provider says it ACTUALLY PRODUCED -- never an echo
+    of what was requested. That distinction is the point of carrying them: a caller that
+    asked for 16:9 and silently got 1:1 has no other way to find out except by opening the
+    file and looking at it. Something recording evidence about its own output needs to
+    record what it got.
+
+    All optional, so a provider that reports none of it yields the result it did before
+    these existed.
+    """
 
     data: bytes = b""
     mime_type: str = "application/octet-stream"
+
+    # Dimensions as the provider states them, "WIDTHxHEIGHT" (e.g. "2048x1152").
+    size: str | None = None
+    quality: str | None = None
+    output_format: str | None = None
+    background: str | None = None
+    # The provider's own timestamp for the generation -- better evidence than the local
+    # clock for anything time-ordered, since it does not depend on this machine's.
+    created: int | None = None
+
+    # Response fields this package does not model, carried verbatim.
+    #
+    # The alternative is a package release every time a provider adds a field, which is
+    # the staleness problem the model catalog exists to avoid -- and it is how a question
+    # like "does this provider return a revised prompt?" ends up answered by reading a
+    # schema rather than by looking at a response. Scalars only, and never the payload
+    # itself: an `extra` carrying megabytes of base64 would defeat the artifact handling
+    # that keeps bytes out of the trace.
+    extra: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, kw_only=True)

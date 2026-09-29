@@ -15,6 +15,16 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- The image response is now reported rather than discarded. `MediaResult` carries the
+  `size`, `quality`, `output_format`, `background` and `created` the provider says it
+  **used** — read from the response, never echoed from the request — plus `extra` for
+  response fields this package does not model yet. `ModelResult` gains
+  `output_text_tokens` and `output_image_tokens`, the counterpart to SA-341's input split;
+  output tokens dominate image cost, so without them a per-image figure cannot be known to
+  be exact. All optional, so a provider reporting none of it yields the result it did
+  before. The trace record carries the produced settings beside the artifact and the output
+  split in its usage block. (SA-357)
+
 - Reference images as input to image generation: `generate_image(prompt, images=None)`,
   mirroring `complete()` — same `ImageInput` type, same validation, same immutable-tuple
   contract. Capability is declared per provider by two new `ProviderSpec` fields,

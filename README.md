@@ -178,17 +178,47 @@ Where a provider reports a breakdown of its input, `ModelResult` carries it alon
 flat figures:
 
 ```python
-result.prompt_tokens        # everything the provider counted as input
-result.input_text_tokens    # … of which text
-result.input_image_tokens   # … of which image
-result.input_cached_tokens  # … of which cached
+result.prompt_tokens         # everything the provider counted as input
+result.input_text_tokens     # … of which text
+result.input_image_tokens    # … of which image
+result.input_cached_tokens   # … of which cached
+
+result.completion_tokens     # everything the provider counted as output
+result.output_text_tokens    # … of which text
+result.output_image_tokens   # … of which image
 ```
 
 This matters for cost rather than curiosity: the components bill at different rates, so a
-caller pricing a call from `prompt_tokens` alone overstates a cached call and understates
-one carrying image input. Anything a provider doesn't report stays `None`, and the flat
-figures are unchanged. The trace record carries the split too, which is where a cost
-monitor should read it from.
+caller pricing a call from the flat figures alone overstates a cached call and understates
+one carrying image input. Output tokens dominate the cost of a generated image, so the
+output split is what tells you whether a per-image cost figure is exact or an
+approximation. Anything a provider doesn't report stays `None`, and the flat figures are
+unchanged. The trace record carries both splits too, which is where a cost monitor should
+read them from.
+
+### What was actually produced
+
+For generated media, `MediaResult` also reports the settings the provider says it **used**
+— never an echo of what was asked for:
+
+```python
+result.size           # "2048x1152", as the provider states it
+result.quality        # "low" | "medium" | "high" | "xhigh" | "max"
+result.output_format  # "png" | "webp" | "jpeg"
+result.background     # "transparent" | "opaque"
+result.created        # the provider's own timestamp
+result.extra          # any response field this package does not model yet
+```
+
+That distinction is the point. A caller that asked for 16:9 and silently got 1:1 has no
+other way to find out except by opening the file and measuring it, and anything recording
+evidence about its own output needs to record what it got rather than what it requested.
+
+`mime_type` stays separate from `output_format` on purpose: it describes the bytes in
+hand, and if the two ever disagree, the bytes are what you will render.
+
+`extra` exists so a field a provider adds later is observable without waiting for a
+release here — scalars only, never the payload.
 
 ## Configuration
 

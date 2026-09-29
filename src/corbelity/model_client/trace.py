@@ -152,6 +152,8 @@ class JsonlTraceLogger:
                     "input_text_tokens": getattr(result, "input_text_tokens", None),
                     "input_image_tokens": getattr(result, "input_image_tokens", None),
                     "input_cached_tokens": getattr(result, "input_cached_tokens", None),
+                    "output_text_tokens": getattr(result, "output_text_tokens", None),
+                    "output_image_tokens": getattr(result, "output_image_tokens", None),
                 },
                 "finish_reason": getattr(result, "finish_reason", None),
                 "error": error,
@@ -196,11 +198,25 @@ class JsonlTraceLogger:
 
         data = getattr(result, "data", None)
         if isinstance(data, bytes | bytearray):
-            return {
+            rendered: dict[str, Any] = {
                 "artifact": self._write_artifact(
                     bytes(data), getattr(result, "mime_type", ""), seq
                 )
             }
+            # What the provider says it produced, recorded beside the artifact. The trace
+            # is where a calibration run reads its evidence back from, so a size or
+            # quality that reaches the result but not the record cannot be checked
+            # afterwards without opening every file and measuring it.
+            produced = {
+                field: getattr(result, field, None)
+                for field in ("size", "quality", "output_format", "background")
+            }
+            if any(value is not None for value in produced.values()):
+                rendered["produced"] = produced
+            extra = getattr(result, "extra", None)
+            if extra:
+                rendered["extra"] = dict(extra)
+            return rendered
 
         text = getattr(result, "text", None)
         if text is not None:

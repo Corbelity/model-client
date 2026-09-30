@@ -24,6 +24,19 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     from huggingface_hub import InferenceClient
 
 
+def _is_model_not_supported(err: BaseException) -> bool:
+    """Is this the router refusing a model the account's providers do not cover?
+
+    Keyed on the status code plus the API's own machine-readable error code, never on its
+    prose -- wording is not a contract, and a message match would break on a rephrasing.
+    Read off the exception rather than imported from huggingface_hub.errors, because this
+    module must not import the SDK at module scope (the extra is optional)."""
+    response = getattr(err, "response", None)
+    if getattr(response, "status_code", None) != 400:
+        return False
+    return "model_not_supported" in str(err)
+
+
 class HuggingFaceClient(ModelClient["InferenceClient"]):
     SPEC: ClassVar[ProviderSpec] = get_spec("huggingface")
 
@@ -39,21 +52,55 @@ class HuggingFaceClient(ModelClient["InferenceClient"]):
         sdk = load_sdk("huggingface_hub", self.SPEC.extra)
         return cast("InferenceClient", sdk.InferenceClient(token=self._resolve_key()))
 
+    def _unserved_message(self, modality: str) -> str:
+        """Nobody serves this model for this task. The fix is a different model."""
+        task = self._TASKS.get(modality, modality)
+        return (
+            f"No HuggingFace inference provider currently serves {self._model!r} for "
+            f"{task}. Browse models that are served at "
+            f"https://huggingface.co/models?pipeline_tag={task}&inference_provider=all"
+        )
+
+    def _not_enabled_message(self, modality: str) -> str:
+        """Somebody serves it, but not a provider this account has turned on. The fix is
+        account settings. Kept separate from _unserved_message on purpose: sending someone
+        to look for another model when their account is what needs changing costs them the
+        time it takes to rule out every model they try."""
+        task = self._TASKS.get(modality, modality)
+        return (
+            f"No inference provider enabled on this HuggingFace account serves "
+            f"{self._model!r} for {task}. Enable one at "
+            f"https://hf.co/settings/inference-providers, or choose a model your enabled "
+            f"providers already serve."
+        )
+
     def _call(self, modality: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        """huggingface_hub raises a BARE StopIteration when no inference provider serves a
-        model for a task -- it calls next() on an empty provider mapping, so the error has
-        no message at all and reaches a UI as "StopIteration: ". Translate it into
-        something the user can act on. (ValueError, so callers treat it as a bad request
-        rather than a provider outage.)"""
+        """Translate the hub's two ways of declining to route a request into actionable
+        errors. Both are bad-request conditions, so both raise ValueError and web layers
+        that map ValueError to a 400 keep working -- the same reasoning as
+        MissingCredentialsError's dual bases.
+
+        Which path fires depends on the modality, and they are not interchangeable:
+
+          * image and speech resolve a provider mapping client-side, and huggingface_hub
+            calls next() on it. An empty mapping raises a BARE StopIteration carrying no
+            message at all, which reaches a UI as "StopIteration: ".
+          * text (task "conversational") short-circuits to a dedicated auto-router before
+            any mapping is fetched -- see huggingface_hub/inference/_providers/__init__.py
+            -- so StopIteration is unreachable for it. The router answers HTTP 400 with
+            code "model_not_supported", which hf_raise_for_status turns into
+            BadRequestError(HfHubHTTPError, ValueError).
+
+        The router path arrived in huggingface-hub 2.0.0. Before it, text also raised
+        StopIteration; the live text test is what caught the change."""
         try:
             return fn(*args, **kwargs)
         except StopIteration as err:
-            task = self._TASKS.get(modality, modality)
-            raise ValueError(
-                f"No HuggingFace inference provider currently serves {self._model!r} for "
-                f"{task}. Browse models that are served at "
-                f"https://huggingface.co/models?pipeline_tag={task}&inference_provider=all"
-            ) from err
+            raise ValueError(self._unserved_message(modality)) from err
+        except ValueError as err:
+            if _is_model_not_supported(err):
+                raise ValueError(self._not_enabled_message(modality)) from err
+            raise
 
     def _invoke(self, system: str, user: str, history: tuple[Message, ...],
                 images: tuple[ImageInput, ...]) -> LLMResult:

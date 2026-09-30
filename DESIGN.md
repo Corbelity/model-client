@@ -416,6 +416,24 @@ of an HTTP boundary. `UnsupportedImageInputError` is not — it reports a capabi
 client does not have for that service, which is the same kind of statement as
 `UnsupportedModalityError` rather than a complaint about an argument.
 
+### A refusal names the remedy it needs
+
+A provider can decline to route a request for reasons that need different answers from the
+caller. HuggingFace has two: nothing serves the model for that task, or nothing *this
+account has enabled* serves it. The first is fixed by choosing another model, the second by
+changing account settings. A single message covering both sends half its readers to rule
+out every model they try before discovering the model was never the problem, so the
+provider raises two, each linking only to its own remedy.
+
+Both are `ValueError` under the rule above — both are bad requests, and both belong on the
+400 side of an HTTP boundary.
+
+Recognising the second is keyed on the transport status code plus the API's own
+machine-readable error code, never on message prose, and reads the code off the attached
+response rather than importing the SDK's exception class: an optional extra must not become
+a runtime import. Wording is not a contract. An error code is the closest thing to one a
+provider offers.
+
 ## 12. Degraded responses are loud
 
 An empty response, or one whose `finish_reason` indicates truncation or filtering, logs a
@@ -469,3 +487,22 @@ leaked and that is the bug to fix.
 
 Live provider tests are marked `live` and excluded by default. They cost money, need
 credentials, and fail for reasons that have nothing to do with this code.
+
+They are not decoration, though, and HuggingFace is why. Every hermetic test overrides
+`_build_client`, so `huggingface_hub` is never imported and a fully green suite is
+compatible with that SDK being entirely broken. mypy in the all-extras job proves the three
+methods still exist on the typed client; nothing proves they still behave, and the
+constructor is unchecked because `sdk.InferenceClient` resolves through `ModuleType` to
+`Any`. Three live tests — one per SDK surface, since a passing text call says nothing about
+`text_to_speech` — are the only evidence behind a major version bump.
+
+A live test is worth having only if a skip and a failure mean different things. Provider
+routing and account configuration skip; everything else fails, including the `TypeError` or
+`AttributeError` that a moved SDK surface produces. That boundary is asserted hermetically
+rather than trusted: the markers the live suite skips on are checked against the messages
+the provider actually raises, in an ordinary CI test, so rewording a message cannot quietly
+turn every routing miss into a failure.
+
+The `huggingface-hub` 2.0.0 bump taught this. It changed the shape of one refusal, the
+translation in §11 stopped firing for text, and the live test was the only thing that
+noticed.

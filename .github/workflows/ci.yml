@@ -11,8 +11,13 @@ jobs:
   # Signed-off-by trailer (see CONTRIBUTING.md). Implemented inline rather than with a
   # third-party action, because a public repo should not hand a marketplace action a token
   # to enforce a rule this small.
+  #
+  # The job always runs on a pull request; the bot exemption lives on the step below, not
+  # here. A job skipped by a job-level `if` reports a status of "skipped", and a ruleset
+  # that lists `dco` as a required check may sit waiting on it forever rather than treat
+  # it as satisfied. Running the job and skipping its only step reports success instead.
   dco:
-    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -20,7 +25,12 @@ jobs:
           # Full history: the base and head commits both have to be present to diff them.
           fetch-depth: 0
 
+      # Dependabot does not sign its commits and cannot be configured to. Keyed on who
+      # OPENED the pull request, not github.actor: the actor is whoever triggered this
+      # particular run, so pushing a commit to a bot branch or asking it to rebase can
+      # make that a human and would drop the bot's unsigned commits back under the check.
       - name: Check sign-off on every commit
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

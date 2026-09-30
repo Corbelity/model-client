@@ -99,6 +99,25 @@ that removes one to save a line will be asked to put it back.
 
 Public API changes need a docstring and a `CHANGELOG.md` entry under `[Unreleased]`.
 
+## A note on the content check
+
+CI runs a check that repo-bound text -- code, comments, docs, commit messages, and the pull
+request title and body -- contains none of a small list of terms the maintainers keep out of
+this repository. The list is not published, for the obvious reason.
+
+It skips on pull requests from forks, which have no access to repository secrets, so an
+outside contribution will never be blocked by it. If you have write access here, enable the
+matching local check once per clone so you find out before pushing rather than after:
+
+```bash
+git config core.hooksPath .githooks
+git config --local guard.pattern "<the list>"
+python scripts/guard.py
+```
+
+`scripts/guard.py` is the same code CI runs. Locally it prints what it found; in CI it
+prints only a location, since Actions logs on a public repository are public.
+
 ## Sign your commits (DCO)
 
 Contributions are accepted under the

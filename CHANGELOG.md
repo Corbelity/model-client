@@ -15,6 +15,15 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- A repository check that fails the build when repo-bound text carries a term the
+  maintainers keep private. It scans tracked file contents, tracked paths, every commit
+  message in the pushed or proposed range, and the pull request title, body and branch name
+  -- the last of those being reachable by no other check, and the route by which text has
+  actually escaped before. The term list is a repository secret rather than a file, since a
+  public workflow naming what it protects publishes it; in CI nothing matched is printed,
+  because the log is public too. `scripts/guard.py` runs the same scan locally and does
+  print what it found, and `.githooks/pre-commit` runs it against staged content. Fork pull
+  requests get no secrets, so the check skips there.
 - Output size, aspect ratio and quality for image generation:
   `generate_image(prompt, images=None, *, aspect_ratio=None, size=None, quality=None)`.
   `aspect_ratio` ("16:9") is the framing decision as stated and resolves to a concrete

@@ -419,8 +419,16 @@ register_provider(ProviderSpec(
 ```
 
 Subclass `ModelClient`, implement `_build_client()` and `_invoke()`, and you inherit the
-timing, logging, tracing, validation and error handling unchanged. See
-[DESIGN.md](DESIGN.md) for why the seam is drawn there.
+timing, logging, tracing, validation and error handling unchanged.
+
+A provider that generates images also implements
+`_invoke_image(prompt, images, options)`, where `options` is an `ImageOptions` carrying the
+requested `size` and `quality`. Omit any setting that is `None` rather than substituting a
+default of your own, and declare what the service can actually do on its spec —
+`image_input`, `max_reference_images`, `image_sizes`, `image_custom_size` and
+`image_qualities` — so the base class refuses impossible requests before they reach you.
+
+See [DESIGN.md](DESIGN.md) for why the seam is drawn there.
 
 ## Development
 

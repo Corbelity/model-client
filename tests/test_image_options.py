@@ -250,8 +250,8 @@ class TestWithReferenceImages:
             quality="medium",
         )
         endpoint, kwargs = client.calls[0]
-        # The endpoint switch is the real risk: references force images.edit, and the size has
-        # to survive that switch.
+        # The endpoint switch is the real risk: references force images.edit, and a
+        # requested size has to survive that switch rather than being dropped with it.
         assert endpoint == "edit"
         assert kwargs["size"] == "2048x1152"
         assert kwargs["quality"] == "medium"

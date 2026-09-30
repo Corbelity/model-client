@@ -39,6 +39,35 @@ The consequences that matter:
 The cost: a provider cannot customise the observability of its own calls. That is the
 point, and it is the right trade for this scope — but it is a constraint, not a freebie.
 
+### Report what was produced, not what was requested
+
+A result carries what the provider says it *did*, never an echo of what it was asked for.
+For generated media that means `size`, `quality`, `output_format`, `background` and
+`created`, each read straight off the response.
+
+The distinction is the entire value. An application that asked for 16:9 and silently got
+1:1 has no way to notice except by opening the file and measuring it, and anything keeping
+evidence about its own output needs to record what it got. Echoing the request back would
+look identical in every passing case and be wrong in exactly the case that matters.
+
+Two consequences:
+
+**`mime_type` is sniffed from the bytes, not taken from the reported `output_format`.**
+The two should agree; if they ever do not, the bytes are what a caller will render, so the
+MIME type has to describe those. Carrying both means a disagreement stays visible instead
+of being resolved by assumption.
+
+**Token usage is split on both sides of the call.** The input split (text / image / cached)
+and the output split (text / image) exist because the components bill at different rates,
+and image output dominates the cost of a generated image. With only the flat figures, a
+cost-per-image is an approximation that cannot be recognised as one from the outside. The
+flat figures stay exactly as the provider reports them; the splits are additive, because
+callers already depend on the flat ones.
+
+The trace record carries the produced settings and the requested ones side by side, under
+separate keys. That separation is what makes a divergence detectable at all: one record
+showing 16:9 asked for and 1:1 delivered is worth more than either figure alone.
+
 ## 2. Observability is never load-bearing
 
 A tracer that raises is caught, logged at WARNING, and swallowed. A full disk must not
@@ -72,7 +101,7 @@ implements `_invoke_image()` and `_invoke_speech()` itself, because images and s
 from entirely different SDK surfaces (`images.generate`, `audio.speech.create`) with their
 own response shapes. Sharing the text path does not imply sharing the others.
 
-Two design rules keep that seam honest:
+Three design rules keep that seam honest:
 
 **Results are normalized, not passed through.** `_invoke()` returns an `LLMResult` or
 `MediaResult` carrying text or bytes plus prompt/completion/total tokens and a finish
@@ -86,6 +115,15 @@ should read as "not counted", never raise.
 positional arguments even though both are usually empty. A subclass that silently dropped
 an attachment would answer confidently about a picture the model never saw. A `TypeError`
 at import time is strictly better than that.
+
+**Settings travel as an object, not as more parameters.** `_invoke_image()` takes
+`(prompt, images, options)`, where `options` is an `ImageOptions`. Every image capability
+that lands wants another setting — size and quality so far, then background, output format,
+inpainting masks — and each one added positionally breaks every provider subclass again. A
+field added to `ImageOptions` reaches every provider without touching the signature. The
+same not-defaulted rule applies: a setting left `None` was not requested, and the provider
+call omits that key entirely so the provider's own default applies rather than one this
+package invented.
 
 ## 4. The service name is the routing decision
 
@@ -191,6 +229,19 @@ The same reasoning explains what `available_services()` deliberately does *not* 
 checks that a credential is **set**, never that it works. Verification would mean a network
 call per provider at startup, and a provider that is briefly down is not a provider you
 should stop offering.
+
+### Unmodelled response fields pass through
+
+`MediaResult.extra` carries response fields this package does not model, verbatim.
+
+This is the same argument as the catalog, one level down. A provider adds a field on its
+own schedule; with nowhere for it to land, observing it requires a release here — and a
+question like "does this provider return a revised prompt?" gets answered by reading a
+schema instead of by looking at a response.
+
+Scalars only, and never the payload. An `extra` holding megabytes of base64 would defeat
+the artifact handling that keeps bytes out of the trace, and a nested object is skipped
+rather than flattened, because guessing at a shape is how a passthrough starts lying.
 
 ## 7. Validation refuses to repair
 
@@ -356,7 +407,14 @@ a clean 400 into a 500 and is noticed in production rather than in review.
 
 Pure input-validation failures stay as plain `ValueError`. They describe a caller mistake,
 not a library condition, and nothing is gained by making callers import a type to catch
-them.
+them. Asking for both `aspect_ratio` and `size` is one of these.
+
+The image errors split along the same line, and the split is deliberate.
+`UnsupportedSizeError`, `UnsupportedQualityError` and `TooManyImagesError` are `ValueError`s:
+each reports a value the caller could have chosen differently, which belongs on the 400 side
+of an HTTP boundary. `UnsupportedImageInputError` is not — it reports a capability this
+client does not have for that service, which is the same kind of statement as
+`UnsupportedModalityError` rather than a complaint about an argument.
 
 ## 12. Degraded responses are loud
 

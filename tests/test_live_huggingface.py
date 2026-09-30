@@ -51,8 +51,15 @@ TEXT_MODEL = os.getenv("HF_LIVE_TEXT_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 IMAGE_MODEL = os.getenv("HF_LIVE_IMAGE_MODEL", "black-forest-labs/FLUX.1-dev")
 SOUND_MODEL = os.getenv("HF_LIVE_SOUND_MODEL", "hexgrad/Kokoro-82M")
 
-# The message HuggingFaceClient._call raises when the hub serves nothing for a model.
-_NO_PROVIDER = "No HuggingFace inference provider currently serves"
+# The two messages HuggingFaceClient._call raises when the hub declines to route a call.
+# Matching the LIBRARY's wording rather than the hub's is deliberate: if a future SDK
+# release changes the failure shape again and the translation stops firing, the raw error
+# will not match either marker and this test FAILS instead of quietly skipping. That is
+# precisely how the 2.0.0 auto-router change was found.
+_DECLINED = (
+    "No HuggingFace inference provider currently serves",
+    "No inference provider enabled on this HuggingFace account serves",
+)
 
 @pytest.fixture(autouse=True)
 def _requirements() -> None:
@@ -68,17 +75,20 @@ def _requirements() -> None:
 
 
 def unserved_is_a_skip[R](model: str, call: Callable[[], R]) -> R:
-    """Run `call`, turning "nothing currently serves this model" into a skip.
+    """Run `call`, turning "this model will not route today" into a skip.
 
-    That condition is the hub's routing on the day, not a regression here, and letting it
-    fail the suite is how a live test earns a reputation for flakiness and stops being
-    trusted. Every other error propagates -- including a TypeError or AttributeError from
-    an SDK change, which is the entire point of these tests."""
+    Covers both reasons the hub declines: nothing serves the model at all, and nothing the
+    account has enabled serves it. Neither is a regression here -- the first is the hub's
+    routing on the day, the second is account configuration -- and letting either fail the
+    suite is how a live test earns a reputation for flakiness and stops being trusted.
+
+    Every other error propagates, including a TypeError or AttributeError from an SDK
+    change, which is the entire point of these tests."""
     try:
         return call()
     except ValueError as err:
-        if _NO_PROVIDER in str(err):
-            pytest.skip(f"hub serves nothing for {model!r} right now: {err}")
+        if any(marker in str(err) for marker in _DECLINED):
+            pytest.skip(f"hub will not route {model!r} right now: {err}")
         raise
 
 

@@ -440,6 +440,13 @@ uv run mypy
 uv run pytest -m live  # hits real endpoints; needs credentials and costs money
 ```
 
+Run the `live` tests after any provider SDK major bump: the rest of the suite fakes every
+provider, so it cannot see an SDK change at all. They need a credential and, for
+HuggingFace, a model your enabled inference providers actually serve — override a default
+that stops being routed with `HF_LIVE_TEXT_MODEL`, `HF_LIVE_IMAGE_MODEL` or
+`HF_LIVE_SOUND_MODEL`. A missing credential or an unroutable model skips rather than fails,
+so read the counts: a skip is not a pass.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) — why the library is shaped the way it is

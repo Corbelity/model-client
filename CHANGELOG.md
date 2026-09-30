@@ -129,6 +129,16 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Fixed
 
+- HuggingFace reports an unroutable model actionably again on the text path. The hub has
+  two ways of declining: nothing serves the model for that task, or nothing the account has
+  *enabled* serves it. Until now only the first was translated, via the bare
+  `StopIteration` that `huggingface_hub` raised from an empty provider mapping.
+  `huggingface-hub` 2.0.0 routes `conversational` through an auto-router that never fetches
+  a mapping, so text began surfacing a raw `BadRequestError` instead. Both conditions now
+  raise `ValueError` with distinct messages linking to their own remedy — a served-model
+  search, or the account's inference-provider settings. Detection keys on the HTTP status
+  plus the API's `model_not_supported` code, not on message text. Image and speech are
+  unchanged; they still resolve a mapping and still raise `StopIteration`.
 - Provider client construction uses `cast()` rather than `# type: ignore[no-any-return]`.
   The ignore could not be correct in both CI environments at once: required with a
   provider SDK installed, reported as unused without one. The lint and type-check steps

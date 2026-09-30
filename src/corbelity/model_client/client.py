@@ -32,6 +32,7 @@ from .errors import (
     MissingCredentialsError,
     MissingDependencyError,
     TooManyImagesError,
+    UnsupportedFidelityError,
     UnsupportedImageInputError,
     UnsupportedModalityError,
     UnsupportedQualityError,
@@ -369,7 +370,8 @@ class ModelClient[ClientT](ABC):
                        *,
                        aspect_ratio: str | None = None,
                        size: str | None = None,
-                       quality: str | None = None) -> MediaResult:
+                       quality: str | None = None,
+                       input_fidelity: str | None = None) -> MediaResult:
         """Text-to-image. Returns raw bytes plus the MIME type needed to render them.
 
         `images` are REFERENCE images to condition the generation on -- a character sheet,
@@ -382,9 +384,15 @@ class ModelClient[ClientT](ABC):
         the pixels outright. They are MUTUALLY EXCLUSIVE -- passing both is an error rather
         than a precedence puzzle. `quality` is independent of both.
 
+        `input_fidelity` ("high" / "low") is how strictly the REFERENCE images are
+        adhered to, so it is only meaningful when `images` are supplied, and passing it
+        without them raises. That is deliberate: a caller who set it and saw no effect
+        would have no way to tell whether the model ignored it or this client dropped it.
+
         None of this is ever silently substituted: a request this service cannot honour
-        raises. Ask ahead with supported_image_sizes(), supported_aspect_ratios() and
-        supported_image_qualities(), none of which need a client or a credential.
+        raises. Ask ahead with supported_image_sizes(), supported_aspect_ratios(),
+        supported_image_qualities() and supported_input_fidelities(), none of which need a
+        client or a credential.
 
         Everything is validated before the provider is touched, and a call passing none of
         these behaves exactly as it did before the parameters existed."""
@@ -392,7 +400,8 @@ class ModelClient[ClientT](ABC):
         pictures = validate_images(images)
         self._require_image_input(pictures)
         options = self._resolve_image_options(
-            aspect_ratio=aspect_ratio, size=size, quality=quality
+            aspect_ratio=aspect_ratio, size=size, quality=quality,
+            input_fidelity=input_fidelity, has_references=bool(pictures)
         )
         request: dict[str, Any] = {"prompt": prompt}
         if pictures:
@@ -403,7 +412,11 @@ class ModelClient[ClientT](ABC):
         if options:
             # Recorded as what was ASKED FOR. What came back is on the result, and keeping
             # the two apart in the record is what lets anyone notice they differ.
-            asked: dict[str, Any] = {"size": options.size, "quality": options.quality}
+            asked: dict[str, Any] = {
+                "size": options.size,
+                "quality": options.quality,
+                "input_fidelity": options.input_fidelity,
+            }
             if aspect_ratio is not None:
                 asked["aspect_ratio"] = aspect_ratio
             request["requested"] = {k: v for k, v in asked.items() if v is not None}
@@ -414,7 +427,8 @@ class ModelClient[ClientT](ABC):
         return result
 
     def _resolve_image_options(self, *, aspect_ratio: str | None, size: str | None,
-                               quality: str | None) -> ImageOptions:
+                               quality: str | None, input_fidelity: str | None = None,
+                               has_references: bool = False) -> ImageOptions:
         """Turn requested output settings into what this provider will be sent.
 
         Every rejection here happens before the provider is touched, and none of them
@@ -443,7 +457,19 @@ class ModelClient[ClientT](ABC):
             self._require_size(resolved)
         if quality is not None:
             self._require_quality(quality)
-        return ImageOptions(size=resolved, quality=quality)
+        if input_fidelity is not None:
+            # Order matters: the no-references case is refused BEFORE the value is checked
+            # against the spec, so a caller who passed it on a plain generation is told the
+            # real problem rather than being sent to look at the accepted values.
+            if not has_references:
+                raise ValueError(
+                    "input_fidelity governs adherence to reference images, so it needs "
+                    f"images= to act on (got input_fidelity={input_fidelity!r} with "
+                    "none). Drop it, or supply the references it applies to."
+                )
+            self._require_fidelity(input_fidelity)
+        return ImageOptions(size=resolved, quality=quality,
+                            input_fidelity=input_fidelity)
 
     def _require_size(self, size: str) -> None:
         spec = self.SPEC
@@ -460,6 +486,12 @@ class ModelClient[ClientT](ABC):
         if quality not in self.SPEC.image_qualities:
             raise UnsupportedQualityError(
                 self.SPEC.name, quality, self.SPEC.image_qualities
+            )
+
+    def _require_fidelity(self, fidelity: str) -> None:
+        if fidelity not in self.SPEC.image_fidelities:
+            raise UnsupportedFidelityError(
+                self.SPEC.name, fidelity, self.SPEC.image_fidelities
             )
 
     def _require_image_input(self, images: tuple[ImageInput, ...]) -> None:

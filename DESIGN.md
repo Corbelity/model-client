@@ -339,6 +339,27 @@ The request settings are recorded in the trace as *asked for*, separately from w
 response says was *produced* (§6). Keeping the two apart in one record is what makes a
 divergence detectable at all.
 
+### A setting whose validity depends on another argument
+
+`input_fidelity` is the first of these. Size and quality can be judged alone — a service
+offers a size or it does not. Adherence to reference images is meaningless without
+reference images, so the same value is valid or invalid depending on whether `images` were
+supplied.
+
+It is refused rather than ignored. A setting dropped because it had nothing to act on is,
+from the caller's side, indistinguishable from a model that disregarded it: the picture
+comes back, nothing looks wrong, and there is no way to learn which of the two happened.
+
+The two checks are ordered, and the order is the interesting part. The missing-references
+case is refused *before* the value is checked against the spec, so a caller who set it on a
+plain generation is told that it needs references — not sent to study a list of accepted
+values that was never the problem.
+
+Capability is declared per provider like the rest: an empty `image_fidelities` means the
+service has no such control, which is a different statement from refusing references
+altogether. A provider can condition on them and simply offer no dial for how closely, and
+the error says so rather than printing an empty list.
+
 ## 8. Configuration is accepted, never reached for
 
 A library never reads the world; it accepts the world.

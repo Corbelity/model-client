@@ -45,6 +45,7 @@ from .errors import (
     ModelClientError,
     TooManyImagesError,
     UnknownServiceError,
+    UnsupportedFidelityError,
     UnsupportedImageInputError,
     UnsupportedModalityError,
     UnsupportedQualityError,
@@ -61,6 +62,7 @@ from .factory import (
     supported_aspect_ratios,
     supported_image_qualities,
     supported_image_sizes,
+    supported_input_fidelities,
     supported_modalities,
 )
 from .media import (
@@ -114,6 +116,7 @@ __all__ = [
     "TooManyImagesError",
     "TraceSink",
     "UnknownServiceError",
+    "UnsupportedFidelityError",
     "UnsupportedImageInputError",
     "UnsupportedModalityError",
     "UnsupportedQualityError",
@@ -142,6 +145,7 @@ __all__ = [
     "sniff_image_mime",
     "supported_aspect_ratios",
     "supported_image_qualities",
+    "supported_input_fidelities",
     "supported_image_sizes",
     "supported_modalities",
     "trace_file_path",

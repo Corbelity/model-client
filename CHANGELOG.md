@@ -15,6 +15,16 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- `input_fidelity` on image generation: `generate_image(prompt, images=[...],
+  input_fidelity="high")`. Controls how strictly reference images are adhered to, and is
+  therefore only meaningful alongside them — passing it without `images` raises rather than
+  being silently dropped, since a dropped setting is indistinguishable from a model that
+  ignored it. Declared per provider by a new `ProviderSpec.image_fidelities`, answered
+  without a client or a credential by `supported_input_fidelities()`, and refused by
+  `UnsupportedFidelityError` (a `ValueError`) before the provider is touched. Reaches
+  OpenAI's edit endpoint only, which is the same condition as having references at all.
+  Recorded in the trace among the requested settings. Omitting it leaves behaviour
+  unchanged. (SA-356)
 - A repository check that fails the build when repo-bound text carries a term the
   maintainers keep private. It scans tracked file contents, tracked paths, every commit
   message in the pushed or proposed range, and the pull request title, body and branch name

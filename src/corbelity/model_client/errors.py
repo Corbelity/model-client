@@ -102,6 +102,24 @@ class UnsupportedQualityError(ModelClientError, ValueError):
         self.supported = tuple(supported)
 
 
+class UnsupportedFidelityError(ModelClientError, ValueError):
+    """A reference-adherence level the service does not accept, or a fidelity request to a
+    service that has no such control at all."""
+
+    def __init__(self, service: str, requested: str, supported: Sequence[str]) -> None:
+        offered = (
+            ", ".join(supported) if supported
+            else "(none -- this service has no reference-fidelity control)"
+        )
+        super().__init__(
+            f"Service {service!r} does not accept input_fidelity {requested!r}. "
+            f"It accepts: {offered}."
+        )
+        self.service = service
+        self.requested = requested
+        self.supported = tuple(supported)
+
+
 class MissingCredentialsError(ModelClientError, ValueError):
     """No API key was found for a provider that requires one.
 

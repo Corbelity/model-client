@@ -201,14 +201,16 @@ Ask ahead, without a client or a credential:
 
 ```python
 from corbelity.model_client import (
-    supported_aspect_ratios, supported_image_qualities, supported_image_sizes,
-    supported_input_fidelities,
+    supported_aspect_ratios, supported_image_backgrounds, supported_image_qualities,
+    supported_image_sizes, supported_input_fidelities, supported_output_formats,
 )
 
 supported_aspect_ratios("openai")     # ('1:1', '3:2', '2:3', '16:9', '9:16')
 supported_image_qualities("openai")   # ('auto', 'low', 'medium', 'high', 'xhigh', 'max')
 supported_image_sizes("openai")       # the resolutions it offers, plus 'auto'
 supported_input_fidelities("openai")  # ('low', 'high')
+supported_image_backgrounds("openai") # ('transparent', 'opaque', 'auto')
+supported_output_formats("openai")    # ('png', 'jpeg', 'webp')
 ```
 
 ### Reference adherence
@@ -228,6 +230,34 @@ deliberate rather than lenient: a setting quietly dropped for having nothing to 
 looks exactly like a model that ignored it, and there would be no way to tell which
 happened. An empty `supported_input_fidelities()` means the service has no such control --
 not that it refuses references.
+
+### Output encoding
+
+```python
+client.generate_image("a prop, isolated", background="transparent")
+client.generate_image("a storyboard frame", output_format="webp", output_compression=70)
+```
+
+Transparency lets a character or prop be composited over a background generated separately,
+rather than committing to whole frames. `output_format` and `output_compression` are storage
+and fidelity: webp at a sensible compression is a large saving on a thumbnail nobody
+inspects closely, while a final render wants lossless.
+
+Two combinations contradict themselves and raise:
+
+```python
+client.generate_image("x", background="transparent", output_format="jpeg")  # no alpha
+client.generate_image("x", output_format="png", output_compression=70)      # lossless
+```
+
+Both are judged against the format actually in effect, so `output_compression=70` with no
+format named is also refused when the service's default is lossless -- a setting that cannot
+do anything is refused rather than accepted and dropped.
+
+The `mime_type` on the result always describes the **bytes**, never what was requested. If
+they disagree, the bytes are what you will render, and `result.output_format` records what
+the service said it produced so the disagreement is findable. Requesting a format changes
+only the fallback used when the bytes are unrecognisable.
 
 `supported_image_sizes` is what a service *offers*, not everything it will take: where a
 provider documents an arbitrary `WIDTHxHEIGHT` (OpenAI does), a well-formed size outside

@@ -12,7 +12,7 @@ jobs:
   # third-party action, because a public repo should not hand a marketplace action a token
   # to enforce a rule this small.
   dco:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

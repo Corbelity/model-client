@@ -22,5 +22,8 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: "development"
+      provider-sdks:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
     commit-message:
       prefix: "deps"

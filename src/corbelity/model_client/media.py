@@ -139,11 +139,15 @@ class ImageOptions:
 
     size: str | None = None
     quality: str | None = None
+    # Only meaningful alongside reference images. The client refuses it without them
+    # rather than sending a setting that would have no subject to act on.
+    input_fidelity: str | None = None
 
     def __bool__(self) -> bool:
         """True when anything was actually requested, so callers can skip the whole
         settings branch on a plain generation."""
-        return self.size is not None or self.quality is not None
+        return (self.size is not None or self.quality is not None
+                or self.input_fidelity is not None)
 
 
 # Deliberately strict: a size is WIDTHxHEIGHT and a ratio is W:H. Anything else is not

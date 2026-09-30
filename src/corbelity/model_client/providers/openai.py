@@ -116,6 +116,15 @@ class OpenAIClient(OpenAICompatibleClient):
         if options.quality is not None:
             settings["quality"] = options.quality
 
+        # Kept OUT of `settings` deliberately: input_fidelity exists on images.edit and
+        # not on images.generate, so folding it in with the shared settings would hide an
+        # asymmetry that matters. The client guarantees it arrives only with references,
+        # and references are exactly what select the edit endpoint below -- but a reader
+        # of this method should be able to see that without going to look.
+        edit_only: dict[str, Any] = {}
+        if options.input_fidelity is not None:
+            edit_only["input_fidelity"] = options.input_fidelity
+
         # Reference images change the ENDPOINT, not just the payload: OpenAI's image
         # models take them through images.edit, while images.generate is text-only. The
         # response shape is identical either way, so only the call differs.
@@ -128,6 +137,7 @@ class OpenAIClient(OpenAICompatibleClient):
                 # thing to get wrong.
                 image=[_as_upload(image, index) for index, image in enumerate(images)],
                 **settings,
+                **edit_only,
             )
         else:
             response = self._client.images.generate(

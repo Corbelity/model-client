@@ -76,6 +76,15 @@ def supported_image_qualities(service: str | None = None, *,
     return provider_spec(service, config=config).image_qualities
 
 
+def supported_input_fidelities(service: str | None = None, *,
+                               config: ModelConfig | None = None) -> tuple[str, ...]:
+    """The reference-adherence levels `service` accepts.
+
+    Empty means it has no such control. That is not the same as refusing references: a
+    service can condition on them and simply offer no dial for how closely."""
+    return provider_spec(service, config=config).image_fidelities
+
+
 def make_model_client(service: str | None = None, **kwargs: Any) -> ModelClient[Any]:
     """Build the provider client for `service`.
 

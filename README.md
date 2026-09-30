@@ -202,12 +202,32 @@ Ask ahead, without a client or a credential:
 ```python
 from corbelity.model_client import (
     supported_aspect_ratios, supported_image_qualities, supported_image_sizes,
+    supported_input_fidelities,
 )
 
-supported_aspect_ratios("openai")    # ('1:1', '3:2', '2:3', '16:9', '9:16')
-supported_image_qualities("openai")  # ('auto', 'low', 'medium', 'high', 'xhigh', 'max')
-supported_image_sizes("openai")      # the resolutions it offers, plus 'auto'
+supported_aspect_ratios("openai")     # ('1:1', '3:2', '2:3', '16:9', '9:16')
+supported_image_qualities("openai")   # ('auto', 'low', 'medium', 'high', 'xhigh', 'max')
+supported_image_sizes("openai")       # the resolutions it offers, plus 'auto'
+supported_input_fidelities("openai")  # ('low', 'high')
 ```
+
+### Reference adherence
+
+How closely the reference images are followed is a setting too:
+
+```python
+client.generate_image(
+    "the same character, three-quarter view",
+    images=[sheet],
+    input_fidelity="high",
+)
+```
+
+It only means anything alongside `images`, so passing it without them raises. That is
+deliberate rather than lenient: a setting quietly dropped for having nothing to act on
+looks exactly like a model that ignored it, and there would be no way to tell which
+happened. An empty `supported_input_fidelities()` means the service has no such control --
+not that it refuses references.
 
 `supported_image_sizes` is what a service *offers*, not everything it will take: where a
 provider documents an arbitrary `WIDTHxHEIGHT` (OpenAI does), a well-formed size outside

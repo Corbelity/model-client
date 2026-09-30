@@ -79,6 +79,11 @@ class ProviderSpec:
     image_custom_size: bool = False
     # Quality values the provider accepts. Empty means quality cannot be requested.
     image_qualities: tuple[str, ...] = ()
+
+    # How strictly reference images are adhered to. Empty means the service has no such
+    # control, which is a different statement from "it takes no references" -- a provider
+    # can accept reference images and give no dial for how closely they are followed.
+    image_fidelities: tuple[str, ...] = ()
     # Alternative spellings folded onto `name`, so a stale config or a hand-edited
     # catalog entry does not fail with "unsupported service".
     aliases: tuple[str, ...] = ()
@@ -150,6 +155,9 @@ BUILTIN_SPECS: tuple[ProviderSpec, ...] = (
         # The edit endpoint omits the DALL-E-era "hd", and the response only ever reports
         # these, so the legacy values are not worth exposing.
         image_qualities=("auto", "low", "medium", "high", "xhigh", "max"),
+        # Edit endpoint only, which is the same condition as "references were supplied":
+        # references are what route a call to images.edit in the first place.
+        image_fidelities=("low", "high"),
         aliases=("open_ai",),
     ),
     ProviderSpec(

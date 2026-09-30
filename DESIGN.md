@@ -360,6 +360,37 @@ service has no such control, which is a different statement from refusing refere
 altogether. A provider can condition on them and simply offer no dial for how closely, and
 the error says so rather than printing an empty list.
 
+### Two settings can each be valid and still contradict each other
+
+Transparency needs a format with an alpha channel; a compression quality needs a lossy one.
+`background="transparent"` is valid, `output_format="jpeg"` is valid, and together they are
+not — so validity is a property of the request, not only of each value in it.
+
+Both are judged against the format actually **in effect**: the one named, or the service's
+declared default when none was. That default is why `ProviderSpec` records
+`image_default_format`, and it turns an otherwise undecidable case into a decidable one.
+`output_compression=80` with no format named would otherwise have to be allowed, and would
+then be a setting the endpoint's own default format makes inert — the silent no-op this
+package refuses everywhere else. Where a provider declares no default, the checks are
+skipped rather than guessed: the provider answers for itself.
+
+Facts about the formats themselves — which have alpha, which are lossy — live in `media.py`
+rather than in `ProviderSpec`. JPEG has no alpha channel and never will. A provider chooses
+which formats it offers; it cannot change what they are.
+
+### The MIME type describes the bytes; the request is only a fallback
+
+§1 says the result reports what was produced rather than what was asked for, and that holds
+here in the strongest case. `mime_type` is sniffed from the bytes in hand, and a requested
+`output_format` does not override it: if the two disagree, the bytes are what a caller will
+render, and the disagreement stays visible because the reported `output_format` is on the
+result too.
+
+What requesting a format changes is the **fallback**. An unrecognised container used to be
+labelled `image/png` on no evidence whatsoever. It now falls back to the format that was
+actually requested, then to the service's default, and only then to PNG. Three ranked
+sources, the most trustworthy first — rather than one guess dressed as an answer.
+
 ## 8. Configuration is accepted, never reached for
 
 A library never reads the world; it accepts the world.

@@ -120,6 +120,42 @@ class UnsupportedFidelityError(ModelClientError, ValueError):
         self.supported = tuple(supported)
 
 
+class UnsupportedBackgroundError(ModelClientError, ValueError):
+    """A background treatment the service does not accept, or a background request to a
+    service that has no such control at all."""
+
+    def __init__(self, service: str, requested: str, supported: Sequence[str]) -> None:
+        offered = (
+            ", ".join(supported) if supported
+            else "(none -- this service has no background control)"
+        )
+        super().__init__(
+            f"Service {service!r} does not accept background {requested!r}. "
+            f"It accepts: {offered}."
+        )
+        self.service = service
+        self.requested = requested
+        self.supported = tuple(supported)
+
+
+class UnsupportedFormatError(ModelClientError, ValueError):
+    """An output format the service does not produce, or a format request to a service
+    that offers no choice of format."""
+
+    def __init__(self, service: str, requested: str, supported: Sequence[str]) -> None:
+        offered = (
+            ", ".join(supported) if supported
+            else "(none -- this service does not offer a choice of output format)"
+        )
+        super().__init__(
+            f"Service {service!r} does not produce output format {requested!r}. "
+            f"It offers: {offered}."
+        )
+        self.service = service
+        self.requested = requested
+        self.supported = tuple(supported)
+
+
 class MissingCredentialsError(ModelClientError, ValueError):
     """No API key was found for a provider that requires one.
 

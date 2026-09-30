@@ -142,12 +142,20 @@ class ImageOptions:
     # Only meaningful alongside reference images. The client refuses it without them
     # rather than sending a setting that would have no subject to act on.
     input_fidelity: str | None = None
+    # Output encoding. `background="transparent"` needs a format with an alpha channel,
+    # and a compression quality needs a lossy one; both are checked before the provider is
+    # touched, against the format actually in effect rather than only the one named.
+    background: str | None = None
+    output_format: str | None = None
+    output_compression: int | None = None
 
     def __bool__(self) -> bool:
         """True when anything was actually requested, so callers can skip the whole
         settings branch on a plain generation."""
-        return (self.size is not None or self.quality is not None
-                or self.input_fidelity is not None)
+        return any(value is not None for value in (
+            self.size, self.quality, self.input_fidelity,
+            self.background, self.output_format, self.output_compression,
+        ))
 
 
 # Deliberately strict: a size is WIDTHxHEIGHT and a ratio is W:H. Anything else is not
@@ -252,6 +260,30 @@ _IMAGE_SIGNATURES: tuple[tuple[bytes, str], ...] = (
     (b"GIF87a", "image/gif"),
     (b"GIF89a", "image/gif"),
 )
+
+
+# Facts about the image FORMATS themselves, not about any provider, which is why they live
+# here and not in ProviderSpec. JPEG has no alpha channel and never will; PNG is lossless
+# and a compression quality means nothing to it. A provider can only choose which of these
+# formats it offers -- it cannot change what they are.
+FORMAT_MIMES: dict[str, str] = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+}
+ALPHA_FORMATS = frozenset({"png", "webp"})
+COMPRESSIBLE_FORMATS = frozenset({"jpeg", "webp"})
+
+
+def mime_for_format(output_format: str | None) -> str | None:
+    """The MIME type a named output format produces, or None for an unknown/absent name.
+
+    Used as the SNIFFER'S FALLBACK rather than as the answer: what was requested is the
+    best guess available when magic bytes are unrecognised, and a far better one than a
+    hardcoded default, but it is still second to the bytes in hand."""
+    if output_format is None:
+        return None
+    return FORMAT_MIMES.get(output_format.lower())
 
 
 def sniff_image_mime(data: bytes, default: str = "application/octet-stream") -> str:

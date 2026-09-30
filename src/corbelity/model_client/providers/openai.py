@@ -21,6 +21,7 @@ from ..media import (
     ImageInput,
     ImageOptions,
     MediaResult,
+    mime_for_format,
     sniff_audio_mime,
     sniff_image_mime,
 )
@@ -115,6 +116,12 @@ class OpenAIClient(OpenAICompatibleClient):
             settings["size"] = options.size
         if options.quality is not None:
             settings["quality"] = options.quality
+        if options.background is not None:
+            settings["background"] = options.background
+        if options.output_format is not None:
+            settings["output_format"] = options.output_format
+        if options.output_compression is not None:
+            settings["output_compression"] = options.output_compression
 
         # Kept OUT of `settings` deliberately: input_fidelity exists on images.edit and
         # not on images.generate, so folding it in with the shared settings would hide an
@@ -143,9 +150,18 @@ class OpenAIClient(OpenAICompatibleClient):
             response = self._client.images.generate(
                 model=self._model, prompt=prompt, n=1, **settings
             )
-        return self._parse_image_response(response)
+        # The format in effect is the sniffer's FALLBACK, not its answer -- see
+        # _parse_image_response. Resolved here because only this method knows what was
+        # requested; the spec's default covers the case where nothing was.
+        return self._parse_image_response(
+            response,
+            fallback_mime=mime_for_format(
+                options.output_format or self.SPEC.image_default_format
+            ),
+        )
 
-    def _parse_image_response(self, response: Any) -> MediaResult:
+    def _parse_image_response(self, response: Any,
+                              *, fallback_mime: str | None = None) -> MediaResult:
         # Every field is read through get_field rather than getattr, because the shape
         # varies: the SDK returns a pydantic model, a stub a SimpleNamespace, a raw HTTP
         # path a plain dict. Mixing the two accessors is how a parser works against one
@@ -192,11 +208,15 @@ class OpenAIClient(OpenAICompatibleClient):
             background=get_field(response, "background"),
             created=get_field(response, "created"),
             extra=_unmodelled_fields(response),
-            # The image endpoint's output format is a request option and models differ on
-            # the default, so sniff rather than assume PNG. Deliberately NOT taken from
-            # the reported output_format above: the MIME type must describe the bytes in
-            # hand, and if the two ever disagree the bytes are what a caller will render.
-            mime_type=sniff_image_mime(data, default="image/png"),
+            # The MIME type describes the BYTES IN HAND, always. Deliberately not taken
+            # from the reported output_format above, nor from what was requested: if those
+            # ever disagree with the bytes, the bytes are what a caller will render, and
+            # the disagreement stays visible because output_format is on the result too.
+            #
+            # What the request contributes is the FALLBACK. An unrecognised container used
+            # to be labelled PNG on no evidence at all; now it falls back to the format
+            # actually asked for, or the service's default, and only then to PNG.
+            mime_type=sniff_image_mime(data, default=fallback_mime or "image/png"),
             prompt_tokens=get_field(usage, "input_tokens") if usage is not None else None,
             completion_tokens=get_field(usage, "output_tokens") if usage is not None else None,
             total_tokens=get_field(usage, "total_tokens") if usage is not None else None,

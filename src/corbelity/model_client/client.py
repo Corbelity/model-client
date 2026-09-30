@@ -32,13 +32,17 @@ from .errors import (
     MissingCredentialsError,
     MissingDependencyError,
     TooManyImagesError,
+    UnsupportedBackgroundError,
     UnsupportedFidelityError,
+    UnsupportedFormatError,
     UnsupportedImageInputError,
     UnsupportedModalityError,
     UnsupportedQualityError,
     UnsupportedSizeError,
 )
 from .media import (
+    ALPHA_FORMATS,
+    COMPRESSIBLE_FORMATS,
     IMAGE,
     SOUND,
     TEXT,
@@ -371,7 +375,10 @@ class ModelClient[ClientT](ABC):
                        aspect_ratio: str | None = None,
                        size: str | None = None,
                        quality: str | None = None,
-                       input_fidelity: str | None = None) -> MediaResult:
+                       input_fidelity: str | None = None,
+                       background: str | None = None,
+                       output_format: str | None = None,
+                       output_compression: int | None = None) -> MediaResult:
         """Text-to-image. Returns raw bytes plus the MIME type needed to render them.
 
         `images` are REFERENCE images to condition the generation on -- a character sheet,
@@ -389,9 +396,17 @@ class ModelClient[ClientT](ABC):
         without them raises. That is deliberate: a caller who set it and saw no effect
         would have no way to tell whether the model ignored it or this client dropped it.
 
+        `background` ("transparent" / "opaque" / "auto"), `output_format` ("png" / "jpeg"
+        / "webp") and `output_compression` (0-100) control the encoding. Two combinations
+        are contradictory and raise rather than producing something that looks right:
+        transparency needs a format with an alpha channel, and a compression quality needs
+        a lossy one. Both are judged against the format actually in effect -- the one named,
+        or the service's own default when none is.
+
         None of this is ever silently substituted: a request this service cannot honour
         raises. Ask ahead with supported_image_sizes(), supported_aspect_ratios(),
-        supported_image_qualities() and supported_input_fidelities(), none of which need a
+        supported_image_qualities(), supported_input_fidelities(),
+        supported_image_backgrounds() and supported_output_formats(), none of which need a
         client or a credential.
 
         Everything is validated before the provider is touched, and a call passing none of
@@ -401,7 +416,9 @@ class ModelClient[ClientT](ABC):
         self._require_image_input(pictures)
         options = self._resolve_image_options(
             aspect_ratio=aspect_ratio, size=size, quality=quality,
-            input_fidelity=input_fidelity, has_references=bool(pictures)
+            input_fidelity=input_fidelity, has_references=bool(pictures),
+            background=background, output_format=output_format,
+            output_compression=output_compression
         )
         request: dict[str, Any] = {"prompt": prompt}
         if pictures:
@@ -416,6 +433,9 @@ class ModelClient[ClientT](ABC):
                 "size": options.size,
                 "quality": options.quality,
                 "input_fidelity": options.input_fidelity,
+                "background": options.background,
+                "output_format": options.output_format,
+                "output_compression": options.output_compression,
             }
             if aspect_ratio is not None:
                 asked["aspect_ratio"] = aspect_ratio
@@ -428,7 +448,10 @@ class ModelClient[ClientT](ABC):
 
     def _resolve_image_options(self, *, aspect_ratio: str | None, size: str | None,
                                quality: str | None, input_fidelity: str | None = None,
-                               has_references: bool = False) -> ImageOptions:
+                               has_references: bool = False,
+                               background: str | None = None,
+                               output_format: str | None = None,
+                               output_compression: int | None = None) -> ImageOptions:
         """Turn requested output settings into what this provider will be sent.
 
         Every rejection here happens before the provider is touched, and none of them
@@ -468,8 +491,39 @@ class ModelClient[ClientT](ABC):
                     "none). Drop it, or supply the references it applies to."
                 )
             self._require_fidelity(input_fidelity)
+
+        if background is not None:
+            self._require_background(background)
+        if output_format is not None:
+            self._require_output_format(output_format)
+        if output_compression is not None:
+            self._require_compression(output_compression)
+
+        # Cross-parameter checks come last and reason about the format actually IN EFFECT:
+        # the one named, or the service's declared default when none was. A caller who asks
+        # for transparency and names no format is asking a perfectly sensible question, and
+        # whether it works depends on what the endpoint produces by default.
+        effective = output_format or self.SPEC.image_default_format
+        if effective is not None:
+            if background == "transparent" and effective not in ALPHA_FORMATS:
+                raise ValueError(
+                    f"background='transparent' needs a format with an alpha channel, and "
+                    f"{effective!r} has none. Name an output_format from "
+                    f"{sorted(ALPHA_FORMATS)}, or drop the transparent background -- the "
+                    "alternative is an opaque image a caller believes is transparent."
+                )
+            if output_compression is not None and effective not in COMPRESSIBLE_FORMATS:
+                raise ValueError(
+                    f"output_compression has no effect on {effective!r}, which is "
+                    f"lossless. Name an output_format from {sorted(COMPRESSIBLE_FORMATS)}, "
+                    "or drop the compression. Passing it here would be a setting that "
+                    "cannot do anything, which is indistinguishable from one that failed."
+                )
+
         return ImageOptions(size=resolved, quality=quality,
-                            input_fidelity=input_fidelity)
+                            input_fidelity=input_fidelity,
+                            background=background, output_format=output_format,
+                            output_compression=output_compression)
 
     def _require_size(self, size: str) -> None:
         spec = self.SPEC
@@ -492,6 +546,37 @@ class ModelClient[ClientT](ABC):
         if fidelity not in self.SPEC.image_fidelities:
             raise UnsupportedFidelityError(
                 self.SPEC.name, fidelity, self.SPEC.image_fidelities
+            )
+
+    def _require_background(self, background: str) -> None:
+        if background not in self.SPEC.image_backgrounds:
+            raise UnsupportedBackgroundError(
+                self.SPEC.name, background, self.SPEC.image_backgrounds
+            )
+
+    def _require_output_format(self, output_format: str) -> None:
+        if output_format not in self.SPEC.image_output_formats:
+            raise UnsupportedFormatError(
+                self.SPEC.name, output_format, self.SPEC.image_output_formats
+            )
+
+    def _require_compression(self, compression: int) -> None:
+        """Type and range before applicability. A bool is excluded explicitly because it
+        IS an int in Python: output_compression=True would otherwise sail through as 1 and
+        quietly mean maximum compression."""
+        if isinstance(compression, bool) or not isinstance(compression, int):
+            raise ValueError(
+                "output_compression is a percentage from 0 to 100, as an int "
+                f"(got {compression!r})."
+            )
+        if not 0 <= compression <= 100:
+            raise ValueError(
+                f"output_compression must be between 0 and 100 (got {compression})."
+            )
+        if not self.SPEC.image_compression:
+            raise ValueError(
+                f"Service {self.SPEC.name!r} has no output compression control, so "
+                f"output_compression={compression} would be dropped. Omit it."
             )
 
     def _require_image_input(self, images: tuple[ImageInput, ...]) -> None:

@@ -84,6 +84,15 @@ class ProviderSpec:
     # control, which is a different statement from "it takes no references" -- a provider
     # can accept reference images and give no dial for how closely they are followed.
     image_fidelities: tuple[str, ...] = ()
+
+    # Output encoding. image_default_format is the format the endpoint produces when none
+    # is requested: a published fact, and the thing that makes "does compression apply
+    # here?" answerable when the caller named no format. None means unknown, and the
+    # cross-parameter checks that depend on it are then skipped rather than guessed.
+    image_backgrounds: tuple[str, ...] = ()
+    image_output_formats: tuple[str, ...] = ()
+    image_default_format: str | None = None
+    image_compression: bool = False
     # Alternative spellings folded onto `name`, so a stale config or a hand-edited
     # catalog entry does not fail with "unsupported service".
     aliases: tuple[str, ...] = ()
@@ -158,6 +167,10 @@ BUILTIN_SPECS: tuple[ProviderSpec, ...] = (
         # Edit endpoint only, which is the same condition as "references were supplied":
         # references are what route a call to images.edit in the first place.
         image_fidelities=("low", "high"),
+        image_backgrounds=("transparent", "opaque", "auto"),
+        image_output_formats=("png", "jpeg", "webp"),
+        image_default_format="png",
+        image_compression=True,
         aliases=("open_ai",),
     ),
     ProviderSpec(

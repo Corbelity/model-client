@@ -85,6 +85,21 @@ def supported_input_fidelities(service: str | None = None, *,
     return provider_spec(service, config=config).image_fidelities
 
 
+def supported_image_backgrounds(service: str | None = None, *,
+                                config: ModelConfig | None = None) -> tuple[str, ...]:
+    """The background treatments `service` accepts. Empty means no such control."""
+    return provider_spec(service, config=config).image_backgrounds
+
+
+def supported_output_formats(service: str | None = None, *,
+                             config: ModelConfig | None = None) -> tuple[str, ...]:
+    """The output encodings `service` will produce.
+
+    Empty means it offers no choice, not that it produces nothing -- it produces whatever
+    its own default is, which `provider_spec(...).image_default_format` names when known."""
+    return provider_spec(service, config=config).image_output_formats
+
+
 def make_model_client(service: str | None = None, **kwargs: Any) -> ModelClient[Any]:
     """Build the provider client for `service`.
 

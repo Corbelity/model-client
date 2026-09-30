@@ -15,6 +15,20 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Added
 
+- Output encoding on image generation: `background` ("transparent" / "opaque" / "auto"),
+  `output_format` ("png" / "jpeg" / "webp") and `output_compression` (0-100). Transparency
+  over a separately generated background is the substantive one; format and compression are
+  storage and fidelity. Two combinations are contradictory and raise rather than producing
+  something that looks right: transparency needs a format with an alpha channel, and a
+  compression quality needs a lossy one. Both are judged against the format in effect --
+  the one named, or the service's default, newly recorded as
+  `ProviderSpec.image_default_format` -- so `output_compression=80` with no format named is
+  refused rather than silently doing nothing. Format facts (which encodings carry alpha,
+  which are lossy) live in `media.py` as `ALPHA_FORMATS` and `COMPRESSIBLE_FORMATS`, since
+  they are properties of the formats and not of any provider. New
+  `UnsupportedBackgroundError` and `UnsupportedFormatError` (both `ValueError`s),
+  `supported_image_backgrounds()` and `supported_output_formats()`. Recorded in the trace
+  among the requested settings. Omitting them leaves behaviour unchanged. (SA-361)
 - `input_fidelity` on image generation: `generate_image(prompt, images=[...],
   input_fidelity="high")`. Controls how strictly reference images are adhered to, and is
   therefore only meaningful alongside them — passing it without `images` raises rather than
@@ -148,6 +162,11 @@ Everything below becomes `0.1.0` when the first tag is cut.
 
 ### Fixed
 
+- An image whose bytes the sniffer does not recognise is no longer labelled `image/png` on
+  no evidence. The MIME type still describes the bytes in hand and a requested
+  `output_format` never overrides it -- if they disagree, the bytes are what a caller will
+  render. But where recognition fails, the fallback is now the format that was requested,
+  then the service's declared default, and only then PNG. (SA-361)
 - HuggingFace reports an unroutable model actionably again on the text path. The hub has
   two ways of declining: nothing serves the model for that task, or nothing the account has
   *enabled* serves it. Until now only the first was translated, via the bare

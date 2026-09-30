@@ -94,7 +94,7 @@ from .messages import History, Message, validate_history
 from .registry import ProviderSpec, get_spec, register_provider
 from .trace import JsonlTraceLogger, NullTrace, TraceSink, make_trace_logger, trace_file_path
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "IMAGE",

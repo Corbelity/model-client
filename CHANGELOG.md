@@ -11,7 +11,13 @@ explicitly, so a minor bump is worth reading before you take it.
 
 ## [Unreleased]
 
-Everything below becomes `0.1.0` when the first tag is cut.
+Nothing yet.
+
+## [0.3.0] - 2026-09-30
+
+Completes the image-generation parameter surface: every output control the provider
+accepts can now be set, every one of them is refused rather than substituted when the
+service cannot honour it, and the result reports what was actually produced.
 
 ### Added
 
@@ -71,6 +77,36 @@ Everything below becomes `0.1.0` when the first tag is cut.
   before. The trace record carries the produced settings beside the artifact and the output
   split in its usage block. (SA-357)
 
+### Changed
+
+- `ModelClient._invoke_image()` now takes `(prompt, images, options)`, where `options` is
+  an `ImageOptions`. An object rather than further positional parameters, because each
+  image capability that lands wants another setting and the seam should stop churning: a
+  field added to `ImageOptions` reaches every provider without another signature change.
+  Breaks external provider subclasses, which is permitted pre-1.0. (SA-355)
+
+### Fixed
+
+- An image whose bytes the sniffer does not recognise is no longer labelled `image/png` on
+  no evidence. The MIME type still describes the bytes in hand and a requested
+  `output_format` never overrides it -- if they disagree, the bytes are what a caller will
+  render. But where recognition fails, the fallback is now the format that was requested,
+  then the service's declared default, and only then PNG. (SA-361)
+- HuggingFace reports an unroutable model actionably again on the text path. The hub has
+  two ways of declining: nothing serves the model for that task, or nothing the account has
+  *enabled* serves it. Until now only the first was translated, via the bare
+  `StopIteration` that `huggingface_hub` raised from an empty provider mapping.
+  `huggingface-hub` 2.0.0 routes `conversational` through an auto-router that never fetches
+  a mapping, so text began surfacing a raw `BadRequestError` instead. Both conditions now
+  raise `ValueError` with distinct messages linking to their own remedy — a served-model
+  search, or the account's inference-provider settings. Detection keys on the HTTP status
+  plus the API's `model_not_supported` code, not on message text. Image and speech are
+  unchanged; they still resolve a mapping and still raise `StopIteration`.
+
+## [0.2.0] - 2026-09-25
+
+### Added
+
 - Reference images as input to image generation: `generate_image(prompt, images=None)`,
   mirroring `complete()` — same `ImageInput` type, same validation, same immutable-tuple
   contract. Capability is declared per provider by two new `ProviderSpec` fields,
@@ -86,6 +122,21 @@ Everything below becomes `0.1.0` when the first tag is cut.
   `usage.prompt_tokens_details.cached_tokens` on the chat path; `prompt_tokens` and
   `completion_tokens` are unchanged. The trace record carries the split too, since that
   is where a cost monitor reads usage back from. (SA-341)
+
+### Changed
+
+- `ModelClient._invoke_image()` previously took `(prompt, images)`. Protected, but external
+  provider subclasses override it, so this breaks them — permitted while pre-1.0 and
+  noted here rather than discovered. `images` is not defaulted, for the same reason
+  `_invoke()`'s parameters are not.
+
+## [0.1.0] - 2026-09-19
+
+First public release: the library extracted from internal prototype work, with the
+provider seam, the registry, the catalog and the observability contract in place.
+
+### Added
+
 - `openai` and `gemini` providers. `openai` covers text, image and speech; `gemini`
   reaches Google's models through their OpenAI-compatibility endpoint and is text-only
   for now — image generation through that shim is unverified, and audio runs over the
@@ -148,35 +199,8 @@ Everything below becomes `0.1.0` when the first tag is cut.
   catalog, the registry, service filtering and the observability contract, using a fake
   provider rather than network calls.
 
-### Changed
-
-- `ModelClient._invoke_image()` now takes `(prompt, images, options)`, where `options` is
-  an `ImageOptions`. An object rather than further positional parameters, because each
-  image capability that lands wants another setting and the seam should stop churning: a
-  field added to `ImageOptions` reaches every provider without another signature change.
-  Breaks external provider subclasses, which is permitted pre-1.0. (SA-355)
-- `ModelClient._invoke_image()` previously took `(prompt, images)`. Protected, but external
-  provider subclasses override it, so this breaks them — permitted while pre-1.0 and
-  noted here rather than discovered. `images` is not defaulted, for the same reason
-  `_invoke()`'s parameters are not.
-
 ### Fixed
 
-- An image whose bytes the sniffer does not recognise is no longer labelled `image/png` on
-  no evidence. The MIME type still describes the bytes in hand and a requested
-  `output_format` never overrides it -- if they disagree, the bytes are what a caller will
-  render. But where recognition fails, the fallback is now the format that was requested,
-  then the service's declared default, and only then PNG. (SA-361)
-- HuggingFace reports an unroutable model actionably again on the text path. The hub has
-  two ways of declining: nothing serves the model for that task, or nothing the account has
-  *enabled* serves it. Until now only the first was translated, via the bare
-  `StopIteration` that `huggingface_hub` raised from an empty provider mapping.
-  `huggingface-hub` 2.0.0 routes `conversational` through an auto-router that never fetches
-  a mapping, so text began surfacing a raw `BadRequestError` instead. Both conditions now
-  raise `ValueError` with distinct messages linking to their own remedy — a served-model
-  search, or the account's inference-provider settings. Detection keys on the HTTP status
-  plus the API's `model_not_supported` code, not on message text. Image and speech are
-  unchanged; they still resolve a mapping and still raise `StopIteration`.
 - Provider client construction uses `cast()` rather than `# type: ignore[no-any-return]`.
   The ignore could not be correct in both CI environments at once: required with a
   provider SDK installed, reported as unused without one. The lint and type-check steps

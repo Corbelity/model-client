@@ -122,6 +122,15 @@ a client library. The provider seam is three methods -- `_submit_video`, `_poll_
 `_fetch_video` -- so the base class owns the clock, finalization and both records, and a
 second video provider arrives fully instrumented, which is why `_run()` exists at all.
 
+`gemini-native` is the first provider behind that seam, through Veo. Two of its mappings
+are judgement calls. A safety refusal arrives as a *finished* operation with no video and a
+list of reasons, not as an error, so it is reported as `filtered` with those reasons
+rather than as a bare failure; a finished operation with neither a video nor a reason is a
+failure that says exactly that. And the provider maps every input role it is given,
+including the two the built-in catalog keeps switched off for Veo until they are verified
+live: a model the catalog does not describe is passed through (§6), and a role that passed
+validation and was then left out of the request would be a silent drop.
+
 ## 2. Observability is never load-bearing
 
 A tracer that raises is caught, logged at WARNING, and swallowed. A full disk must not
@@ -301,6 +310,18 @@ Three decisions inside it:
 
 `resolve_video_request()` runs the same check without a client or a credential, so a UI
 can grey out a combination before offering it and get the answer a real call would.
+
+One layer sits under the model's, and it is about the API rather than the model. The Gemini
+API has no `seed` and no `generate_audio` for any Veo model (Google's enterprise route has
+both), and google-genai raises on them with a message that names neither this service nor
+the remedy. So a `ProviderSpec` can state `video_settings`, the settings its API can carry
+at all. A setting outside that set is refused before the catalog is consulted. The other
+choice was to drop it quietly on the way out, which is substitution by omission, so that
+was never on the table. It is checked a second time on what will actually be sent, because
+a catalog row can force a setting the caller never mentioned, and a forced setting the
+service cannot carry must fail loudly rather than vanish. `None`, the default, means no
+restriction is known, and a provider written against this package keeps passing
+everything through.
 
 ### Listing is filtered; calling is not
 
@@ -682,3 +703,14 @@ turn every routing miss into a failure.
 The `huggingface-hub` 2.0.0 bump taught this. It changed the shape of one refusal, the
 translation in §11 stopped firing for text, and the live test was the only thing that
 noticed.
+
+There is a middle tier between the fake and the live call, and `gemini-native` video uses
+it: a real `google.genai.Client` with only its HTTP transport replaced. The SDK builds the
+request body, parses the operation and works out the download path itself, so the test
+sees what would go over the wire, with no credential and no cost. It is how the suite knows
+that the file is fetched by id through the configured endpoint, whatever host the response
+names, and it carries a tripwire. A test asserts that the SDK still refuses `seed` and
+`generate_audio` for this API, so the day Google adds them that test fails and says to
+widen the spec's `video_settings`. It skips without the extra, like any SDK-backed test.
+Video live tests are opt-in on top of `-m live` (`GEMINI_LIVE_VIDEO=1`), because each clip
+is billed per second.

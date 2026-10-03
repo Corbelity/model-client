@@ -84,4 +84,9 @@ Consequences:
   configure. It creates no other files.
 - The only hosts it contacts are the provider endpoints you configure, via the providers'
   own SDKs. It performs no other network access, and no telemetry of any kind.
+- A generated video is downloaded from the same configured endpoint, with the same key.
+  For Veo (`gemini-native`), the SDK takes only the file id from the URI in the provider's
+  response, and the host that URI names is never contacted, so a response cannot redirect
+  your key to another server. A test drives the real SDK with a foreign host in the
+  response to hold that line.
 - Provider SDKs are imported lazily and only when their provider is used.

@@ -45,13 +45,26 @@ explicitly, so a minor bump is worth reading before you take it.
   `VideoJobFailedError`, `ContentFilteredError` and `VideoJobNotFoundError` (also a
   `LookupError`). `ModelConfig` gains `video_poll_interval_s` (10) and
   `video_wait_timeout_s` (600), read from `CORBELITY_VIDEO_POLL_INTERVAL` and
-  `CORBELITY_VIDEO_WAIT_TIMEOUT`. No provider implements the seam yet.
+  `CORBELITY_VIDEO_WAIT_TIMEOUT`.
 - Video in the trace. A job's inputs are written with its submit record as role-named
   artifacts (`<run>-<seq>-first.png`, `-last`, `-ref0`..`-ref2`, `-extend.mp4`); a clip
   passed as a provider handle is recorded as the handle and never downloaded. The video
   itself is written with the terminal record. `JsonlTraceLogger(video_artifacts=False)`
   keeps every video record in full but writes no payload files for video calls, for an
   application that already stores its videos.
+- Video on `gemini-native`, through Veo: text-to-video, video from a start frame, and
+  video interpolated between a start and an end frame. `veo-3.1-generate-preview` (up to
+  4K) and `veo-3.1-lite-generate-preview` (up to 1080p) are in the built-in catalog with
+  their limits stated, so a setting either model cannot honour is refused before the
+  network. Reference images and extension are mapped by the provider but stay switched
+  off in the catalog until they are verified live. A safety refusal is reported as
+  `ContentFilteredError` with Google's reasons. The finished video carries its
+  `source_uri` (Veo keeps it for two days) and is downloaded only from the configured
+  endpoint. Not yet reported: the produced video's duration and dimensions.
+- `ProviderSpec.video_settings`: the video settings a service's API can carry at all.
+  A setting outside it is refused before the call rather than dropped. `gemini-native`
+  lists five; `seed` and `generate_audio` are refused, because the Gemini API has neither
+  parameter (Veo 3 always produces audio). `None`, the default, passes everything through.
 - `resolve_video_request()`: judges a video request with no client, credential or network
   call, returning the settings a real submission would send or raising what it would
   raise. New errors `UnsupportedVideoSettingError` (a `ValueError`) and

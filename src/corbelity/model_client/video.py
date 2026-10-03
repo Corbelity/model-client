@@ -9,7 +9,7 @@ Three layers, cheapest and most certain first:
   1. Structure -- types and shapes that are wrong for every provider (a duration that is
      not a whole number, an extend input that is both bytes and a handle).
   2. The client's capability, from the ProviderSpec -- whether this service takes video
-     at all, and which forms of video input it can route.
+     at all, which forms of video input it can route, and which settings it can send.
   3. The model's stated capability, from the catalog's `video` block -- enforced only
      when stated. A model the catalog does not describe gets layers 1 and 2 and is then
      passed through for the provider to judge, so a model released after this package
@@ -64,6 +64,7 @@ def resolve_request(spec: ProviderSpec, model: str, entry: ModelInfo | None,
 
     _check_structure(inputs, options)
     _check_input_forms(spec, model, inputs)
+    _check_settings(spec, model, options)
 
     caps = entry.video if entry is not None else None
     if caps is None:
@@ -80,7 +81,12 @@ def resolve_request(spec: ProviderSpec, model: str, entry: ModelInfo | None,
             )
         return options
 
-    return _check_capabilities(spec.name, model, caps, inputs, options)
+    resolved = _check_capabilities(spec.name, model, caps, inputs, options)
+    # Again on what will actually be sent: a catalog row can force a setting the caller
+    # never mentioned, and a catalog that forces one this service cannot carry must not
+    # have it silently dropped on the way out.
+    _check_settings(spec, model, resolved)
+    return resolved
 
 
 # --------------------------------------------------------------------------- #
@@ -165,6 +171,19 @@ def _check_input_forms(spec: ProviderSpec, model: str, inputs: VideoInputs) -> N
         + (f" It accepts: {', '.join(spec.video_input_forms)}." if spec.video_input_forms
            else ""),
     )
+
+
+def _check_settings(spec: ProviderSpec, model: str, options: VideoOptions) -> None:
+    accepted = spec.video_settings
+    if accepted is None:
+        return
+    for setting, value in options.requested().items():
+        if setting not in accepted:
+            raise UnsupportedVideoSettingError(
+                spec.name, model, setting, value,
+                reason=f"{spec.name!r} has no {setting} parameter, so the setting cannot "
+                       f"be sent; omit it. Settings it takes: {', '.join(accepted) or '(none)'}.",
+            )
 
 
 # --------------------------------------------------------------------------- #

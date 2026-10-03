@@ -1,4 +1,4 @@
-"""The native Gemini provider (`gemini-native`), text.
+"""The native Gemini provider (`gemini-native`), text. Video is in test_gemini_native_video.py.
 
 Almost everything here runs with no SDK installed: the fake overrides `_build_client`, and
 responses are SimpleNamespaces shaped like google-genai's. Two classes at the bottom DO
@@ -120,9 +120,9 @@ class TestRegistration:
     def test_names_and_aliases_resolve(self, written: str) -> None:
         assert resolve_service(written) == "gemini-native"
 
-    def test_registered_and_text_only(self) -> None:
+    def test_registered_for_text_and_video(self) -> None:
         assert "gemini-native" in known_services()
-        assert supported_modalities("gemini-native") == frozenset({"text"})
+        assert supported_modalities("gemini-native") == frozenset({"text", "video"})
 
     def test_shares_the_shims_credential_names_and_order(self) -> None:
         assert get_spec("gemini-native").key_env == get_spec("gemini").key_env

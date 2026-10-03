@@ -71,8 +71,8 @@ call site says plainly which one it is using.
 | `ollama` | Ollama Cloud | `OLLAMA_API_KEY` | `OLLAMA_CLOUD_URL` |
 | `huggingface` | HuggingFace Inference | `HF_TOKEN`, `HUGGINGFACE_HUB_KEY`, `HUGGINGFACEHUB_API_TOKEN` | fixed |
 
-`openai` and `huggingface` produce text, images and sound; the rest are text. Ask before
-you build:
+`openai` and `huggingface` produce text, images and sound; `gemini-native` produces text
+and video; the rest are text. Ask before you build:
 
 ```python
 from corbelity.model_client import supported_modalities
@@ -92,9 +92,9 @@ lower-cased.
 There are two Gemini services, and they reach the same models by different routes.
 
 **`gemini-native`** uses Google's own SDK, `google-genai`. This is the route Google
-recommends, and the one where Gemini's other capabilities (video, images, speech) arrive.
-Text today, with history and image attachments, under the same contract as every other
-provider:
+recommends, and the one where Gemini's other capabilities arrive. Text, with history and
+image attachments, under the same contract as every other provider — and video, through
+Veo (see [Video](#video)):
 
 ```python
 client = make_model_client("gemini-native", model="gemini-3.8-flash")
@@ -128,6 +128,7 @@ The built-in catalog shows both routes, each with its own model:
 |---|---|---|
 | `gemini-3.8-flash` | `gemini-native` | Google's own SDK |
 | `gemini-3.5-flash-lite` | `gemini` | OpenAI-compatibility endpoint |
+| `veo-3.1-generate-preview`, `veo-3.1-lite-generate-preview` | `gemini-native` | Google's own SDK (video has no compatibility route) |
 
 A model id can appear only once in a catalog (it is both the key and the name sent to the
 API), so the same model can't be listed under both. Routing follows the service name you
@@ -353,6 +354,77 @@ hand, and if the two ever disagree, the bytes are what you will render.
 `extra` exists so a field a provider adds later is observable without waiting for a
 release here — scalars only, never the payload.
 
+### Video
+
+Video takes a minute or more to generate, so it is a **job** rather than a call:
+`submit_video()` returns at once, and the video is collected later.
+
+```python
+from corbelity.model_client import ImageInput, make_model_client
+
+client = make_model_client("gemini-native", model="veo-3.1-lite-generate-preview")
+job = client.submit_video(
+    "A slow pan across a harbour at sunrise",
+    first_frame=ImageInput.from_bytes(png),      # optional: animate from this image
+    duration_seconds=8, resolution="1080p", aspect_ratio="16:9",
+)
+store(job.to_ref().to_dict())     # the job runs, and is billed, whether or not you poll
+
+status = job.poll()               # one status request; never blocks for long
+video = job.wait(timeout_s=600)   # or poll until done
+Path("clip.mp4").write_bytes(video.data)
+```
+
+`generate_video(...)` is submit-then-wait in one call, for scripts. In a server, submit
+and poll instead, so no thread is held for minutes.
+
+**A job outlives the process that started it.** `to_ref().to_dict()` is plain data an
+application can store; `client.resume_video(stored)` picks the job up anywhere, even after
+a restart. A reference from a different service or model is refused rather than polled
+through the wrong provider.
+
+**Running out of time is not a failure.** `wait()` raises `VideoTimeoutError`, which
+carries the job's reference: the video is still being made and can be resumed. The other
+endings are `VideoJobFailedError` (the provider gave up, with its reason),
+`ContentFilteredError` (refused on safety grounds, with the reasons given), and
+`VideoJobNotFoundError` (the provider no longer knows the job: Veo keeps them two days).
+
+**Inputs are named by role**, because an image means something different in each:
+`first_frame` (animate from it), `last_frame` (interpolate towards it, which needs a
+`first_frame`), `references` (people or objects to keep consistent) and `extend` (continue
+an earlier clip; pass its result directly). The built-in catalog switches on
+`first_frame` and `last_frame` for Veo; `references` and `extend` follow once they are
+verified against the live API, and are refused for those models until then.
+
+**Everything is checked before anything is sent**, against the service and then against
+what the catalog states about the model. A value the model does not offer is refused,
+never swapped for a nearby one. The one thing filled in is a setting a model rule forces
+to a single value that you left unset — Veo's 1080p and 4K are 8-second only, so
+`resolution="1080p"` alone sends `duration_seconds=8`, and the trace records what was
+asked for and what was sent, separately. The same judgement is available with no client,
+credential or network call, so a UI can grey out what will not work:
+
+```python
+from corbelity.model_client import VideoInputs, VideoOptions, resolve_video_request
+
+resolve_video_request("gemini-native", "veo-3.1-lite-generate-preview",
+                      VideoInputs(first_frame=frame), VideoOptions(resolution="1080p"))
+# returns resolution='1080p', duration_seconds=8 -- or raises what a submit would
+```
+
+Veo on the Gemini API, specifically:
+
+- **Audio is always produced.** `generate_audio` is refused (the Gemini API has no such
+  parameter), and so is `seed` (the same: it exists only on Google's enterprise route).
+- **The finished video is kept for two days.** `result.source_uri` is the provider's
+  handle to it, which is what extending it needs.
+- **The download goes only to the endpoint you configured**, with your key. The file id is
+  read from the response; the host it names is never contacted.
+
+> **Not yet reported:** the duration, dimensions and frame rate the video actually has.
+> `MediaResult` reports what a provider states it produced, and Veo states none of these;
+> reading them from the MP4 itself is planned. Until then, measure the file if it matters.
+
 ## Configuration
 
 Resolution order, everywhere:
@@ -376,6 +448,8 @@ client = make_model_client("anthropic", config=config)   # or set_default_config
 | `CORBELITY_NUM_CTX` | `16384` | Ollama context window; ignored elsewhere |
 | `CORBELITY_MODEL_CATALOG` | unset | path to a catalog that merges over the built-in one |
 | `CORBELITY_SERVICES` | unset | comma-separated allow-list of services to list |
+| `CORBELITY_VIDEO_POLL_INTERVAL` | `10` | seconds between polls in `wait()` |
+| `CORBELITY_VIDEO_WAIT_TIMEOUT` | `600` | seconds `wait()` holds before `VideoTimeoutError` |
 
 This package **does not** call `load_dotenv()`, **does not** write to `os.environ`, and
 **does not** configure logging. Those are your application's decisions. It reads only the
@@ -493,6 +567,12 @@ you can't reproduce is the one you most needed the trace for.
 
 Tracing is never load-bearing: a tracer that raises is logged and swallowed, so a full
 disk cannot turn a working model call into a failed one.
+
+A video job writes **two** records, joined by the operation id: one when it is submitted
+(with the input frames as role-named artifacts, `-first.png`, `-last.png`, ...) and one
+when its end is first seen (with the video). Polls are not traced. An application that
+already stores its videos can pass `JsonlTraceLogger(..., video_artifacts=False)` to keep
+the records but skip writing video payloads.
 
 ## Adding your own provider
 

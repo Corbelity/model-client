@@ -264,6 +264,38 @@ class TestClientCapability:
         resolve(None, extend=VideoInput(uri="files/a"))
 
 
+class TestServiceSettings:
+    """ProviderSpec.video_settings: what the service's API can carry at all."""
+
+    CLOSED = ProviderSpec(
+        name="closed-video", client_path="x:Y", modalities=frozenset({VIDEO}),
+        video_settings=("resolution", "duration_seconds"),
+    )
+
+    def test_none_means_everything_passes_through(self) -> None:
+        assert SPEC.video_settings is None
+        assert resolve(None, seed=3).seed == 3
+
+    def test_a_setting_outside_the_list_is_refused_for_an_unlisted_model(self) -> None:
+        with pytest.raises(UnsupportedVideoSettingError, match="has no seed parameter") as err:
+            resolve(None, spec=self.CLOSED, seed=3)
+        assert "Settings it takes: resolution, duration_seconds" in str(err.value)
+
+    def test_it_comes_before_the_models_own_rules(self) -> None:
+        # The service cannot carry it at all, whatever the model would say.
+        with pytest.raises(UnsupportedVideoSettingError, match="has no generate_audio"):
+            resolve(VEO_BLOCK, spec=self.CLOSED, generate_audio=False)
+
+    def test_a_setting_the_catalog_forces_is_checked_too(self) -> None:
+        # references force aspect_ratio 16:9, which this service cannot send: refused,
+        # never silently dropped on the way out.
+        with pytest.raises(UnsupportedVideoSettingError, match="has no aspect_ratio"):
+            resolve(VEO_BLOCK, spec=self.CLOSED, references=(FRAME,))
+
+    def test_listed_settings_pass(self) -> None:
+        assert resolve(VEO_BLOCK, spec=self.CLOSED, resolution="4k").duration_seconds == 8
+
+
 # --------------------------------------------------------------------------- #
 # Layer 3: a model the catalog does not describe
 # --------------------------------------------------------------------------- #
@@ -458,10 +490,10 @@ class TestFactory:
                 VideoInputs(references=(FRAME,), first_frame=FRAME), config=config,
             )
 
-    def test_no_real_service_takes_video_yet(self) -> None:
-        # Until a provider implements the seam, asking is refused before the network.
+    def test_a_text_only_service_refuses_video(self) -> None:
+        # A service that does not implement the seam is refused before the network.
         with pytest.raises(UnsupportedModalityError):
-            resolve_video_request("gemini-native", "veo-3.1-generate-preview")
+            resolve_video_request("anthropic", "claude-sonnet-5")
 
 
 def test_source_uri_reaches_the_trace(tmp_path: Path) -> None:

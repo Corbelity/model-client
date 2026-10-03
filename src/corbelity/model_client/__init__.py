@@ -1,4 +1,4 @@
-"""Provider-agnostic, traced access to text, image and speech model APIs.
+"""Provider-agnostic, traced access to text, image, speech and video model APIs.
 
 Quick start
 -----------
@@ -13,14 +13,15 @@ call site says plainly which one it is using:
     anthropic     Anthropic API, direct
     openai        OpenAI API, direct -- text, image and sound
     gemini        Gemini, via Google's OpenAI-compatibility endpoint (text only)
-    gemini-native Gemini, via Google's own SDK (google-genai)
+    gemini-native Gemini, via Google's own SDK (google-genai) -- text and video (Veo)
     openrouter    OpenRouter, cloud
     ollama-local  Ollama running on the local host
     ollama        Ollama Cloud
     huggingface   HuggingFace Inference -- text, image and sound
 
 Text is the common denominator; only openai and huggingface generate images and speech,
-and each does so through its own SDK surface rather than through chat completions. Ask a
+and only gemini-native generates video, each through its own SDK surface rather than
+through chat completions. Ask a
 service for something it cannot produce and it raises UnsupportedModalityError before any
 network call -- supported_modalities() answers the same question without even importing
 the provider.

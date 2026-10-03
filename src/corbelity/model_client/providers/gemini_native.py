@@ -6,11 +6,12 @@ nothing written against the shim changes behaviour -- the same arrangement as
 `ollama-local` and `ollama`. It is also where Gemini's video, image and speech routes will
 land, since none of them exist on the compatibility endpoint.
 
-Text only in this release. The request is built from plain dicts, which the SDK accepts
-for every type it defines; that keeps the SDK out of everything except `_build_client`,
-so the tests can fake this provider without importing it.
+Text and video (Veo). Requests are built from plain dicts, which the SDK accepts for every
+type it defines; that keeps the SDK out of everything except `_build_client` and the one
+type the operations API insists on, so the tests can fake this provider without
+importing it.
 
-Four things about the native API that the shim used to hide, each handled below:
+Four things about the native text API that the shim used to hide, each handled below:
 
   * Reasoning comes back as parts marked `thought=True`. They are dropped from the text,
     rather than relying on the SDK's `.text` convenience, whose handling of non-text parts
@@ -27,6 +28,19 @@ Four things about the native API that the shim used to hide, each handled below:
 Thinking also spends from `max_output_tokens`. A low cap can be used up entirely by
 reasoning, giving finish_reason MAX_TOKENS with no visible text; the empty-response warning
 fires correctly, and raising max_tokens is the fix.
+
+Video is a long-running operation: `_submit_video` starts it and returns its name,
+`_poll_video` asks after it, `_fetch_video` downloads the result. The base class owns the
+loop, the clock and the trace records (see jobs.py). Three things about Veo shape them:
+
+  * A refusal on safety grounds is not an error. The operation finishes "done" with no
+    video and a list of filter reasons, which is reported as the FILTERED state so the
+    caller is told why rather than handed "no video".
+  * The download goes to the configured endpoint, never to the host named in the
+    response. The SDK takes only the file id from the video's URI and fetches it with
+    this client's own base URL and key, so a response cannot steer the key elsewhere.
+  * Generated videos are kept for two days. The URI is kept as `source_uri`, which is
+    what extending the video later needs.
 """
 from __future__ import annotations
 
@@ -35,7 +49,16 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ..catalog import load_catalog
 from ..client import ModelClient, get_field, load_sdk
-from ..media import ImageInput, LLMResult
+from ..errors import ModelClientError, VideoJobNotFoundError
+from ..jobs import FAILED, FILTERED, RUNNING, SUCCEEDED, VideoPoll
+from ..media import (
+    ImageInput,
+    LLMResult,
+    MediaResult,
+    VideoInputs,
+    VideoOptions,
+    sniff_video_mime,
+)
 from ..messages import Message
 from ..registry import ProviderSpec, get_spec
 
@@ -48,7 +71,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
         ContentDict,
         ContentUnionDict,
         GenerateContentConfigDict,
+        GenerateVideosConfigDict,
+        GenerateVideosSourceDict,
+        ImageDict,
         PartDict,
+        VideoGenerationReferenceImageDict,
     )
 
 # Gemini names the assistant "model". The rest of this package says "assistant", and the
@@ -103,6 +130,10 @@ def _input_split(details: Iterable[Any] | None) -> tuple[int | None, int | None]
         elif modality == "IMAGE":
             image = (image or 0) + count
     return text, image
+
+
+def _image_dict(image: ImageInput) -> ImageDict:
+    return {"image_bytes": image.data, "mime_type": image.mime_type}
 
 
 def _sum_present(*values: int | None) -> int | None:
@@ -233,4 +264,133 @@ class GeminiNativeClient(ModelClient["Client"]):
             text=_answer_text(parts or ()),
             finish_reason=_enum_value(get_field(candidate, "finish_reason")),
             **tokens,
+        )
+
+    # ----------------------------------------------------------------------- #
+    # Video (Veo)
+    # ----------------------------------------------------------------------- #
+    def _sdk_types(self) -> Any:
+        return load_sdk("google.genai.types", self.SPEC.extra)
+
+    def _submit_video(self, prompt: str, inputs: VideoInputs,
+                      options: VideoOptions) -> str:
+        # Every role is mapped, including the two the built-in catalog does not yet
+        # switch on for Veo (references, extend). A model the catalog does not describe
+        # is passed through to the provider (DESIGN.md section 6); a role that reached
+        # this point and was then left out of the request would be a silent drop.
+        source: GenerateVideosSourceDict = {}
+        # Omitted when blank rather than sent empty: an image-to-video request may carry
+        # no prompt, and "no prompt" is the statement the API understands.
+        if prompt.strip():
+            source["prompt"] = prompt
+        if inputs.first_frame is not None:
+            source["image"] = _image_dict(inputs.first_frame)
+        if inputs.extend is not None:
+            source["video"] = {"uri": inputs.extend.uri}
+
+        # Only what was requested (or forced by a catalog constraint): None is omitted so
+        # the API's own default applies. The names match the SDK's one for one, and the
+        # spec's video_settings has already refused any this API lacks.
+        config: GenerateVideosConfigDict = cast(
+            "GenerateVideosConfigDict", options.requested()
+        )
+        if inputs.last_frame is not None:
+            config["last_frame"] = _image_dict(inputs.last_frame)
+        if inputs.references:
+            # ASSET is the reference type Google documents for Veo 3.1. The enum comes from
+            # the SDK because the typed dict demands it.
+            asset = self._sdk_types().VideoGenerationReferenceType.ASSET
+            references: list[VideoGenerationReferenceImageDict] = [
+                {"image": _image_dict(image), "reference_type": asset}
+                for image in inputs.references
+            ]
+            config["reference_images"] = references
+
+        operation = self._client.models.generate_videos(
+            model=self._model, source=source, config=config or None,
+        )
+        name = get_field(operation, "name")
+        if not isinstance(name, str) or not name:
+            # Without the name nothing can find the job again, and it is running and
+            # billed regardless. Say so, rather than return a job that can never finish.
+            raise ModelClientError(
+                f"Gemini accepted a video request for {self._model!r} but returned no "
+                "operation name, so the job cannot be followed."
+            )
+        return name
+
+    def _poll_video(self, operation: str) -> VideoPoll:
+        # operations.get() wants an operation OBJECT: it reads `.name` and parses the
+        # reply with the object's own class. A bare one built from the name is enough,
+        # and is what lets a job be resumed in a process that never submitted it.
+        handle = self._sdk_types().GenerateVideosOperation(name=operation)
+        try:
+            reply = self._client.operations.get(handle)
+        except Exception as err:
+            # 404 is the one failure with a different remedy (resubmit, do not retry), so
+            # it gets its own error. Anything else propagates and the job stays pollable.
+            if getattr(err, "code", None) == 404:
+                raise VideoJobNotFoundError(self.SPEC.name, operation) from err
+            raise
+        return self._read_operation(operation, reply)
+
+    def _read_operation(self, operation: str, reply: Any) -> VideoPoll:
+        if not get_field(reply, "done"):
+            # Veo reports no progress figure, so none is invented.
+            return VideoPoll(state=RUNNING)
+
+        error = get_field(reply, "error")
+        if error:
+            message = get_field(error, "message") or str(error)
+            code = get_field(error, "code")
+            return VideoPoll(
+                state=FAILED, error=f"{message} (code {code})" if code else str(message)
+            )
+
+        response = get_field(reply, "response", "result")
+        # get_field() reads None as "absent", so a missing response is simply no videos.
+        generated = get_field(response, "generated_videos") or []
+        videos = [
+            video for video in (get_field(entry, "video") for entry in generated)
+            if video is not None
+        ]
+        if videos:
+            if len(videos) > 1:
+                # Never asked for (number_of_videos is not sent), so worth a word.
+                self._logger.warning(
+                    "Video job %s returned %d videos; keeping the first.",
+                    operation, len(videos),
+                )
+            return VideoPoll(state=SUCCEEDED, output=videos[0])
+
+        reasons = tuple(
+            str(reason)
+            for reason in (get_field(response, "rai_media_filtered_reasons") or ())
+        )
+        count = get_field(response, "rai_media_filtered_count")
+        if reasons or count:
+            return VideoPoll(state=FILTERED, filtered_reasons=reasons)
+        return VideoPoll(
+            state=FAILED,
+            error="the job finished without a video and gave no reason",
+        )
+
+    def _fetch_video(self, poll: VideoPoll) -> MediaResult:
+        video = poll.output
+        inline = get_field(video, "video_bytes")
+        if isinstance(inline, bytes) and inline:
+            data = inline
+        else:
+            # Fetched by file id through this client's endpoint (see the module note);
+            # the URI's host is not contacted. A failure here propagates, the job stays
+            # unfinalized, and the next poll tries the download again.
+            data = self._client.files.download(file=video)
+        declared = get_field(video, "mime_type")
+        return MediaResult(
+            data=data,
+            # What the bytes ARE, falling back to what the provider says they are.
+            mime_type=sniff_video_mime(
+                data, default=declared if isinstance(declared, str) else "video/mp4"
+            ),
+            source_uri=get_field(video, "uri"),
         )

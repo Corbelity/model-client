@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "corbelity-model-client"
 version = "0.3.0"
-description = "Provider-agnostic, traced client for text, image and speech model APIs."
+description = "Provider-agnostic, traced client for text, image, speech and video model APIs."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"

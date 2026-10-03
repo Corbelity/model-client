@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from .errors import UnknownServiceError
-from .media import IMAGE, SOUND, TEXT
+from .media import IMAGE, SOUND, TEXT, VIDEO
 
 if TYPE_CHECKING:
     from .client import ModelClient
@@ -97,6 +97,14 @@ class ProviderSpec:
     # client and the provider together, like image_input. Veo only extends videos it made
     # and still holds, so its service accepts ("uri",). Empty means no video input at all.
     video_input_forms: tuple[str, ...] = ()
+    # The video settings this client can SEND to the service, by VideoOptions field name.
+    # None means no restriction is known, and every setting is passed through for the
+    # provider to judge. A tuple is a closed set: a setting outside it is refused before
+    # the call, because the service has no parameter to carry it and the alternative is
+    # dropping what the caller asked for. Per-service rather than per-model because it
+    # describes the API, not the model -- the Gemini API has no `seed` for any Veo model,
+    # while Google's enterprise route has one for all of them.
+    video_settings: tuple[str, ...] | None = None
     # Alternative spellings folded onto `name`, so a stale config or a hand-edited
     # catalog entry does not fail with "unsupported service".
     aliases: tuple[str, ...] = ()
@@ -204,9 +212,20 @@ BUILTIN_SPECS: tuple[ProviderSpec, ...] = (
         # OpenAI-compatibility path, and pointing the native SDK at it would fail.
         base_url_env=("GEMINI_NATIVE_BASE_URL",),
         # No default: the SDK's own endpoint is correct, the same reasoning as `openai`.
-        # Text only for now. Video, image and speech land on this same service in later
-        # releases, as the routes behind them are verified.
-        modalities=frozenset({TEXT}),
+        # Image and speech land on this same service in later releases, as the routes
+        # behind them are verified.
+        modalities=frozenset({TEXT, VIDEO}),
+        # Veo extends only a video it generated and still holds, addressed by its URI.
+        video_input_forms=("uri",),
+        # The Gemini API's video parameters. `seed` and `generate_audio` exist only on
+        # Google's enterprise (Vertex AI) route: the SDK raises on them for this API with
+        # a message that names neither this service nor the remedy, so they are refused
+        # here first. Veo 3 always
+        # produces audio, so there is nothing for generate_audio to switch.
+        video_settings=(
+            "aspect_ratio", "resolution", "duration_seconds", "negative_prompt",
+            "person_generation",
+        ),
         aliases=("google-genai", "gemini-genai"),
     ),
     ProviderSpec(

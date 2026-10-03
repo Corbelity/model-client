@@ -320,15 +320,40 @@ class ModelCatalog:
         return ModelCatalog(tuple(combined.values()))
 
     @classmethod
-    def from_json(cls, text: str) -> ModelCatalog:
+    def from_json(cls, text: str, *, source: str = "") -> ModelCatalog:
+        """Parse a catalog. `source` names where it came from, for error messages.
+
+        A model id may appear only ONCE in a catalog. The id is both the catalog's key and
+        the name sent to the API, and this class keys by id -- so a duplicate would load
+        without complaint, the later entry would replace the earlier, and the earlier would
+        simply vanish. That is a silent substitution (DESIGN.md section 7), so it fails the
+        load instead, naming the id and where both entries are. (A user catalog that reuses
+        a built-in id is different: that is one file overriding another, by design.)"""
         raw = json.loads(text)
+        where = f" {source}" if source else ""
         if not isinstance(raw, list):
-            raise ValueError("A model catalog must be a JSON array of objects.")
-        return cls(tuple(ModelInfo.from_mapping(entry) for entry in raw))
+            raise ValueError(f"Model catalog{where} must be a JSON array of objects.")
+        models = tuple(ModelInfo.from_mapping(entry) for entry in raw)
+        positions: dict[str, list[int]] = {}
+        for index, model in enumerate(models, start=1):
+            positions.setdefault(model.id, []).append(index)
+        duplicates = {model_id: at for model_id, at in positions.items() if len(at) > 1}
+        if duplicates:
+            listed = "; ".join(
+                f"{model_id!r} (entries {', '.join(map(str, at))})"
+                for model_id, at in duplicates.items()
+            )
+            raise ValueError(
+                f"Model catalog{where} lists the same model id more than once: {listed}. "
+                "An id is the catalog's key and the name sent to the API, so it can appear "
+                "only once; loading this would silently keep the later entry and drop the "
+                "earlier. Give each entry its own id."
+            )
+        return cls(models)
 
     @classmethod
     def from_file(cls, path: Path | str) -> ModelCatalog:
-        return cls.from_json(Path(path).read_text(encoding="utf-8"))
+        return cls.from_json(Path(path).read_text(encoding="utf-8"), source=str(path))
 
     @classmethod
     def builtin(cls) -> ModelCatalog:
@@ -339,7 +364,7 @@ class ModelCatalog:
             .joinpath(CATALOG_RESOURCE)
             .read_text(encoding="utf-8")
         )
-        return cls.from_json(text)
+        return cls.from_json(text, source=f"(built-in {CATALOG_RESOURCE})")
 
 
 @lru_cache(maxsize=1)

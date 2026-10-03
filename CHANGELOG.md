@@ -49,6 +49,11 @@ explicitly, so a minor bump is worth reading before you take it.
   `blocklist`, `prohibited_content`, `spii`, `image_safety`, `language`, `other`) and
   `prompt_blocked`, the value `gemini-native` reports when the prompt itself is refused.
   Each now logs a warning, as a truncated answer already did.
+- **A model catalog that lists the same model id twice now fails to load**, naming the id,
+  its entry positions and the file. Before, the later entry silently replaced the earlier
+  one, because a model id is both the catalog's key and the name sent to the API. A user
+  catalog that reuses a built-in id still overrides it as before: only a repeat within one
+  file is refused.
 - `available_services()` reports `gemini-native` alongside `gemini` when
   `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set, since one key serves both.
 - **`gemini-3.8-flash` now names `gemini-native` in the built-in catalog.** Anything that

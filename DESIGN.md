@@ -175,7 +175,9 @@ Which models exist, what they cost, whether they accept images, whether they tol
 `temperature` parameter — none of that changes when this package changes. It changes when
 a vendor ships. So it lives in `models.json`, loaded through `importlib.resources` (not
 `__file__` path arithmetic, so it works from a wheel or a zipapp), and a user catalog
-merges over the built-in one by model id.
+merges over the built-in one by model id. Within one file, an id may appear only once: a
+repeat fails the load rather than letting the later entry silently replace the earlier,
+which is the substitution §7 refuses everywhere else.
 
 The concrete case: some current Anthropic models **removed** sampling parameters and
 return a 400 rather than a warning if you send `temperature`. The prototype carried a

@@ -171,8 +171,8 @@ class TestCatalogRouting:
         assert not native_ids & {entry.id for entry in shim}
 
     def test_shipped_catalog_has_no_duplicate_ids(self) -> None:
-        # Read as raw JSON on purpose. ModelCatalog keys by id, so a duplicate would
-        # load without complaint and the earlier entry would simply vanish.
+        # Read as raw JSON on purpose. The loader also refuses duplicates, but then every
+        # test touching the catalog fails at once; this one names the culprit directly.
         from importlib import resources
 
         raw = json.loads(

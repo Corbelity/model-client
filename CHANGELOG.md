@@ -11,30 +11,30 @@ explicitly, so a minor bump is worth reading before you take it.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-03
+
+Gemini through Google's own SDK, and video generation, starting with Veo. Two changes
+are worth reading before upgrading: the built-in catalog now routes `gemini-3.8-flash`
+through the new `gemini-native` service, and a catalog that lists a model id twice now
+fails to load. Both are under **Changed**.
+
 ### Added
 
 - `gemini-native` service: Gemini through Google's own SDK (`google-genai`), installed with
-  the new `[gemini-native]` extra. Text, with history and image attachments, under the
-  same contract as every other provider. A separate service from `gemini`, which is
-  unchanged. Aliases `google-genai` and `gemini-genai`; endpoint override
-  `GEMINI_NATIVE_BASE_URL`.
-- `gemini-3.5-flash-lite` in the built-in catalog under `gemini`, as a worked example of
-  the compatibility route alongside the native one. Each route has its own model, because
-  a model id is both the catalog's key and the name sent to the API, so one id cannot
-  appear twice.
-- The `VIDEO` modality's request types, ahead of any provider generating video:
-  `VideoInputs` names each input by role (`first_frame`, `last_frame`, `references`,
-  `extend`), because an image means different things in video and a positional list
-  would make "which is the first frame" an ordering convention. `VideoInput` is either
-  bytes or a provider's handle to a video it holds; `VideoOptions` carries the output
-  settings. `sniff_video_mime()` recognises MP4, QuickTime and WebM, and
-  `MediaResult.source_uri` carries a provider's handle to what it produced (recorded in
-  the trace).
-- Per-model video capability in the catalog: an optional `video` block (inputs, reference
-  cap, aspect ratios, resolutions, durations, audio policy) with a three-verb constraint
-  table (`require`, `require_input`, `exclude_input`). What a block states is enforced
-  before the network; a model without one is passed through. See DESIGN.md, "Enforced
-  when stated".
+  the new `[gemini-native]` extra (`[all]` includes it). Text, with history and image
+  attachments, under the same contract as every other provider, plus video. A separate
+  service from `gemini`, which is unchanged. Aliases `google-genai` and `gemini-genai`;
+  endpoint override `GEMINI_NATIVE_BASE_URL`.
+- Video generation on `gemini-native`, through Veo: text-to-video, video from a start
+  frame, and video interpolated between a start and an end frame.
+  `veo-3.1-generate-preview` (up to 4K) and `veo-3.1-lite-generate-preview` (up to 1080p)
+  are in the built-in catalog with their limits stated, so a setting either model cannot
+  honour is refused before the network. Reference images and extension are mapped by the
+  provider but stay switched off in the catalog until they are verified live. A safety
+  refusal is reported as `ContentFilteredError` with Google's reasons. The finished video
+  carries its `source_uri` (Veo keeps it for two days) and is downloaded only from the
+  configured endpoint. **Not yet reported:** the produced video's duration, dimensions and
+  frame rate.
 - Video jobs: `submit_video()` returns a `VideoJob` at once; `poll()` asks once, `wait()`
   polls until done, `result()` returns the video (or raises `VideoNotReadyError` rather
   than blocking). `job.to_ref()` gives a `VideoJobRef` whose `to_dict()` an application
@@ -46,49 +46,45 @@ explicitly, so a minor bump is worth reading before you take it.
   `LookupError`). `ModelConfig` gains `video_poll_interval_s` (10) and
   `video_wait_timeout_s` (600), read from `CORBELITY_VIDEO_POLL_INTERVAL` and
   `CORBELITY_VIDEO_WAIT_TIMEOUT`.
+- The `VIDEO` modality's request types. `VideoInputs` names each input by role
+  (`first_frame`, `last_frame`, `references`, `extend`), because an image means different
+  things in video and a positional list would make "which is the first frame" an
+  ordering convention. `VideoInput` is either bytes or a provider's handle to a video it
+  holds; `VideoOptions` carries the output settings. `sniff_video_mime()` recognises MP4,
+  QuickTime and WebM.
+- Per-model video capability in the catalog: an optional `video` block (inputs, reference
+  cap, aspect ratios, resolutions, durations, audio policy) with a three-verb constraint
+  table (`require`, `require_input`, `exclude_input`). What a block states is enforced
+  before the network; a model without one is passed through. A setting a rule forces to a
+  single value is filled in when left unset, and refused when set to anything else. See
+  DESIGN.md, "Enforced when stated".
+- `ProviderSpec.video_settings`: the video settings a service's API can carry at all.
+  A setting outside it is refused before the call rather than dropped. `gemini-native`
+  lists five; `seed` and `generate_audio` are refused, because the Gemini API has neither
+  parameter (Veo 3 always produces audio). `None`, the default, passes everything through.
+  `ProviderSpec.video_input_forms` says which forms of video input a client can route.
+- `resolve_video_request()`: judges a video request with no client, credential or network
+  call, returning the settings a real submission would send or raising what it would
+  raise. New errors `UnsupportedVideoSettingError` (a `ValueError`) and
+  `UnsupportedVideoInputError`.
 - Video in the trace. A job's inputs are written with its submit record as role-named
   artifacts (`<run>-<seq>-first.png`, `-last`, `-ref0`..`-ref2`, `-extend.mp4`); a clip
   passed as a provider handle is recorded as the handle and never downloaded. The video
   itself is written with the terminal record. `JsonlTraceLogger(video_artifacts=False)`
   keeps every video record in full but writes no payload files for video calls, for an
   application that already stores its videos.
-- Video on `gemini-native`, through Veo: text-to-video, video from a start frame, and
-  video interpolated between a start and an end frame. `veo-3.1-generate-preview` (up to
-  4K) and `veo-3.1-lite-generate-preview` (up to 1080p) are in the built-in catalog with
-  their limits stated, so a setting either model cannot honour is refused before the
-  network. Reference images and extension are mapped by the provider but stay switched
-  off in the catalog until they are verified live. A safety refusal is reported as
-  `ContentFilteredError` with Google's reasons. The finished video carries its
-  `source_uri` (Veo keeps it for two days) and is downloaded only from the configured
-  endpoint. Not yet reported: the produced video's duration and dimensions.
-- `ProviderSpec.video_settings`: the video settings a service's API can carry at all.
-  A setting outside it is refused before the call rather than dropped. `gemini-native`
-  lists five; `seed` and `generate_audio` are refused, because the Gemini API has neither
-  parameter (Veo 3 always produces audio). `None`, the default, passes everything through.
-- `resolve_video_request()`: judges a video request with no client, credential or network
-  call, returning the settings a real submission would send or raising what it would
-  raise. New errors `UnsupportedVideoSettingError` (a `ValueError`) and
-  `UnsupportedVideoInputError`.
+- `MediaResult.source_uri`: a provider's handle to what it produced, which is what
+  building on it later (extending a video) needs. Recorded in the trace.
 - `ModelResult.output_reasoning_tokens`: tokens a model spent thinking. Billed at the
   output rate but never in the text, so a cost computed from `output_text_tokens` alone
   undercounts a reasoning model. Recorded in the trace's `usage` block.
+- `gemini-3.5-flash-lite` in the built-in catalog under `gemini`, as a worked example of
+  the compatibility route alongside the native one. Each route has its own model, because
+  a model id is both the catalog's key and the name sent to the API, so one id cannot
+  appear twice.
 
 ### Changed
 
-- `INCOMPLETE_FINISH_REASONS` gains Gemini's unclean finishes (`safety`, `recitation`,
-  `blocklist`, `prohibited_content`, `spii`, `image_safety`, `language`, `other`) and
-  `prompt_blocked`, the value `gemini-native` reports when the prompt itself is refused.
-  Each now logs a warning, as a truncated answer already did.
-- **A model catalog that lists the same model id twice now fails to load**, naming the id,
-  its entry positions and the file. Before, the later entry silently replaced the earlier
-  one, because a model id is both the catalog's key and the name sent to the API. A user
-  catalog that reuses a built-in id still overrides it as before: only a repeat within one
-  file is refused.
-- A trace artifact that could not be written (a full disk, say) is now marked in its
-  descriptor with `write_failed`, rather than naming a file that does not exist. The call
-  and the record are unaffected, as before.
-- `available_services()` reports `gemini-native` alongside `gemini` when
-  `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set, since one key serves both.
 - **`gemini-3.8-flash` now names `gemini-native` in the built-in catalog.** Anything that
   builds its client from a catalog entry (a model picker, `make_model_client(entry.service,
   ...)`) now reaches it through Google's own SDK, and needs the `[gemini-native]` extra
@@ -96,8 +92,22 @@ explicitly, so a minor bump is worth reading before you take it.
   unaffected and still reaches the compatibility shim. A user catalog that sets
   `"service": "gemini"` on an entry keeps overriding the built-in one, as before. One
   knock-on for allow-lists: `ModelConfig(services=("gemini",))` no longer lists
-  `gemini-3.8-flash`, only the compatibility example below; name `gemini-native` as well
-  (or use `available_services()`, which reports both for one key).
+  `gemini-3.8-flash`, only the compatibility example `gemini-3.5-flash-lite`; name
+  `gemini-native` as well (or use `available_services()`, which reports both for one key).
+- **A model catalog that lists the same model id twice now fails to load**, naming the id,
+  its entry positions and the file. Before, the later entry silently replaced the earlier
+  one, because a model id is both the catalog's key and the name sent to the API. A user
+  catalog that reuses a built-in id still overrides it as before: only a repeat within one
+  file is refused.
+- `INCOMPLETE_FINISH_REASONS` gains Gemini's unclean finishes (`safety`, `recitation`,
+  `blocklist`, `prohibited_content`, `spii`, `image_safety`, `language`, `other`) and
+  `prompt_blocked`, the value `gemini-native` reports when the prompt itself is refused.
+  Each now logs a warning, as a truncated answer already did.
+- A trace artifact that could not be written (a full disk, say) is now marked in its
+  descriptor with `write_failed`, rather than naming a file that does not exist. The call
+  and the record are unaffected, as before.
+- `available_services()` reports `gemini-native` alongside `gemini` when
+  `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set, since one key serves both.
 
 ## [0.3.0] - 2026-09-30
 
@@ -312,4 +322,8 @@ the changes exist to make the code safe to embed in someone else's application.
 - Ollama clients resolve configuration before importing their SDK, so a missing host
   raises the same error whether or not the optional SDK is installed.
 
-[Unreleased]: https://github.com/Corbelity/model-client/commits/main
+[Unreleased]: https://github.com/Corbelity/model-client/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Corbelity/model-client/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Corbelity/model-client/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/Corbelity/model-client/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/Corbelity/model-client/releases/tag/v0.1.0

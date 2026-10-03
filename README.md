@@ -488,6 +488,13 @@ instead of matching hardcoded model-name prefixes. Two such flags ship today:
 Both default to the permissive behaviour when a model isn't listed, so an unlisted model
 still works.
 
+The one place a stated fact *is* enforced is a model's `video` block: what it says a model
+cannot do (a resolution, a duration, a combination of inputs) is refused before anything
+is sent. Veo's own rejection of a bad combination is a generic "unsupported request" that
+does not say what conflicted, so the library's refusal is the only place a caller learns
+what to change. A model without a block is passed through for the provider to judge, so an
+unlisted video model still works too. See [Video](#video).
+
 ### Showing only the services you can actually call
 
 A user catalog merges over the built-in one, which means it can add a model or correct an

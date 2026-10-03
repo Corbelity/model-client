@@ -195,8 +195,56 @@ The general shape worth keeping: when providers differ in a way that is **data**
 a flag, an endpoint), put it in data. Reserve code for differences in **behaviour**.
 
 The catalog is **descriptive, not enforcing**. Calling an unlisted model works fine.
-Nothing here gates a request — it exists so a UI can populate a dropdown and so provider
-code can read a flag instead of hardcoding a list.
+It exists so a UI can populate a dropdown and so provider code can read a flag instead of
+hardcoding a list. The one exception is below, and it is narrower than it looks.
+
+### Enforced when stated
+
+Video needed something to refuse against. "Refuse, never substitute" (§7) says a model
+that cannot do 4K must not be quietly given 1080p, and Veo 3.1 and Veo 3.1 Lite differ in
+exactly that way — per model, not per provider. So a model's catalog entry can carry a
+`video` block, and **what it states is enforced before the network**. What it does not
+state is not assumed: a model with no block gets only the structural checks (types, and an
+end frame needing a start frame), and the provider judges the rest.
+
+That keeps the property that matters. A model released after this package ships still
+works, untouched, until someone describes it. It is the same rule `supports_sampling`
+already follows — authoritative when stated, fallback otherwise — applied to more fields.
+
+The block's constraint table has three verbs and a fixed trigger vocabulary:
+
+```json
+{"when": "references",       "require": {"duration_seconds": 8, "aspect_ratio": "16:9"}},
+{"when": "references",       "exclude_input": ["first_frame", "last_frame"]},
+{"when": "last_frame",       "require_input": "first_frame"},
+{"when": "resolution:1080p", "require": {"duration_seconds": 8}}
+```
+
+Each row is a vendor limit that will change on the vendor's schedule, which is why it is
+data. Each reads as one sentence in the error it produces. It is a lookup table, not a rule
+engine: a limit that needs logic the table cannot express is the signal for code, not for
+growing the vocabulary.
+
+Three decisions inside it:
+
+- **A forced setting is filled when unset, refused when set otherwise.** If references
+  require 8 seconds and the caller named no duration, 8 is sent. That is not a choice made
+  for the caller — there is no other value that works — and it is the same move as
+  `aspect_ratio` resolving to a concrete size. A caller who asked for 4 seconds is refused,
+  not overridden.
+- **The exclusion's message names both ways out.** The Veo row above came from a live
+  probe, and Veo's own rejection of that combination is a generic 400 ("Unsupported video
+  generation request") that does not say what conflicted. Here, the library's refusal is
+  strictly more useful than the provider's — which is the strongest argument for checking
+  client-side at all.
+- **Unknown vocabulary is warned and skipped, not raised.** The catalog tolerates fields
+  from a newer version of this package, so an unknown verb cannot fail the load. But a
+  skipped row is a rule not enforced, so it is never silent. Malformed data in a known
+  field — a duration that is not a whole number — does raise, naming the model: a catalog
+  that loads but enforces the wrong thing is worse than one that fails to load.
+
+`resolve_video_request()` runs the same check without a client or a credential, so a UI
+can grey out a combination before offering it and get the answer a real call would.
 
 ### Listing is filtered; calling is not
 

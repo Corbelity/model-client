@@ -26,6 +26,7 @@ from collections.abc import Callable, Mapping, Sequence
 from types import ModuleType
 from typing import Any, ClassVar
 
+from .catalog import load_catalog
 from .config import ModelConfig, get_default_config
 from .errors import (
     MissingBaseUrlError,
@@ -51,6 +52,8 @@ from .media import (
     LLMResult,
     MediaResult,
     ModelResult,
+    VideoInputs,
+    VideoOptions,
     aspect_ratios_of,
     parse_size,
     sizes_for_ratio,
@@ -59,6 +62,7 @@ from .media import (
 from .messages import History, Message, validate_history
 from .registry import ProviderSpec
 from .trace import TraceSink
+from .video import resolve_request
 
 # finish_reason values that mean the model did NOT stop on its own -- the output is likely
 # truncated or filtered, so complete() warns on them. The vocabulary is PROVIDER-SPECIFIC,
@@ -603,6 +607,18 @@ class ModelClient[ClientT](ABC):
         maximum = self.SPEC.max_reference_images
         if maximum is not None and len(images) > maximum:
             raise TooManyImagesError(self.SPEC.name, len(images), maximum)
+
+    def _resolve_video_request(self, inputs: VideoInputs,
+                               options: VideoOptions) -> VideoOptions:
+        """Judge a video request for this client's service and model; return the options
+        to send. Every video entry point goes through here, before the provider is
+        touched.
+
+        Reads the UNFILTERED catalog, never catalog_for(): a model a UI has filtered out
+        of its dropdown must be judged exactly as it would be if listed. Narrowing what
+        is shown must never change what a call is allowed to do (DESIGN.md section 6)."""
+        entry = load_catalog(self._config.catalog_path).get(self._model)
+        return resolve_request(self.SPEC, self._model, entry, inputs, options)
 
     def generate_speech(self, text: str) -> MediaResult:
         """Text-to-speech. Returns raw audio bytes plus the sniffed MIME type."""

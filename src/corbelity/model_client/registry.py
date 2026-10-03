@@ -93,6 +93,10 @@ class ProviderSpec:
     image_output_formats: tuple[str, ...] = ()
     image_default_format: str | None = None
     image_compression: bool = False
+    # Which forms of VideoInput this client can route ("bytes", "uri"). A fact about the
+    # client and the provider together, like image_input. Veo only extends videos it made
+    # and still holds, so its service accepts ("uri",). Empty means no video input at all.
+    video_input_forms: tuple[str, ...] = ()
     # Alternative spellings folded onto `name`, so a stale config or a hand-edited
     # catalog entry does not fail with "unsupported service".
     aliases: tuple[str, ...] = ()

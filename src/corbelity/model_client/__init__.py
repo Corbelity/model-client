@@ -36,7 +36,14 @@ from __future__ import annotations
 
 import logging
 
-from .catalog import ModelCatalog, ModelInfo, builtin_catalog, load_catalog
+from .catalog import (
+    ModelCatalog,
+    ModelInfo,
+    VideoCapabilities,
+    VideoConstraint,
+    builtin_catalog,
+    load_catalog,
+)
 from .client import INCOMPLETE_FINISH_REASONS, ModelClient, load_sdk
 from .config import ModelConfig, get_default_config, set_default_config
 from .errors import (
@@ -53,6 +60,8 @@ from .errors import (
     UnsupportedModalityError,
     UnsupportedQualityError,
     UnsupportedSizeError,
+    UnsupportedVideoInputError,
+    UnsupportedVideoSettingError,
 )
 from .factory import (
     available_services,
@@ -62,6 +71,7 @@ from .factory import (
     make_model_client,
     provider_spec,
     resolve_service,
+    resolve_video_request,
     supported_aspect_ratios,
     supported_image_backgrounds,
     supported_image_qualities,
@@ -77,18 +87,25 @@ from .media import (
     IMAGE,
     SOUND,
     SUPPORTED_IMAGE_MIMES,
+    SUPPORTED_VIDEO_MIMES,
     TEXT,
+    VIDEO,
+    VIDEO_ROLES,
     ImageInput,
     ImageOptions,
     LLMResult,
     MediaResult,
     ModelResult,
+    VideoInput,
+    VideoInputs,
+    VideoOptions,
     aspect_ratios_of,
     parse_aspect_ratio,
     parse_size,
     sizes_for_ratio,
     sniff_audio_mime,
     sniff_image_mime,
+    sniff_video_mime,
     validate_images,
 )
 from .messages import History, Message, validate_history
@@ -102,7 +119,10 @@ __all__ = [
     "INCOMPLETE_FINISH_REASONS",
     "SOUND",
     "SUPPORTED_IMAGE_MIMES",
+    "SUPPORTED_VIDEO_MIMES",
     "TEXT",
+    "VIDEO",
+    "VIDEO_ROLES",
     "History",
     "ImageInput",
     "ALPHA_FORMATS",
@@ -134,6 +154,13 @@ __all__ = [
     "UnsupportedModalityError",
     "UnsupportedQualityError",
     "UnsupportedSizeError",
+    "UnsupportedVideoInputError",
+    "UnsupportedVideoSettingError",
+    "VideoCapabilities",
+    "VideoConstraint",
+    "VideoInput",
+    "VideoInputs",
+    "VideoOptions",
     "__version__",
     "aspect_ratios_of",
     "available_services",
@@ -152,10 +179,12 @@ __all__ = [
     "provider_spec",
     "register_provider",
     "resolve_service",
+    "resolve_video_request",
     "set_default_config",
     "sizes_for_ratio",
     "sniff_audio_mime",
     "sniff_image_mime",
+    "sniff_video_mime",
     "supported_aspect_ratios",
     "supported_image_backgrounds",
     "supported_image_qualities",

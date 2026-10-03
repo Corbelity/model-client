@@ -156,6 +156,43 @@ class UnsupportedFormatError(ModelClientError, ValueError):
         self.supported = tuple(supported)
 
 
+class UnsupportedVideoSettingError(ModelClientError, ValueError):
+    """A video setting this model does not offer, or one a model constraint rules out.
+
+    A ValueError, like the image setting errors: it reports a value the caller could have
+    chosen differently. Raised, never substituted -- a model that cannot do 4K is not
+    quietly given 1080p."""
+
+    def __init__(self, service: str, model: str, setting: str, requested: object,
+                 supported: Sequence[object] = (), *, reason: str | None = None) -> None:
+        if reason is None:
+            offered = ", ".join(str(value) for value in supported) if supported else "(none)"
+            reason = f"It offers: {offered}."
+        super().__init__(
+            f"{model!r} on {service!r} cannot take {setting}={requested!r}. {reason}"
+        )
+        self.service = service
+        self.model = model
+        self.setting = setting
+        self.requested = requested
+        self.supported = tuple(supported)
+
+
+class UnsupportedVideoInputError(ModelClientError):
+    """A video input role this model or client cannot route, or a combination of roles
+    the model refuses.
+
+    Not a ValueError, matching UnsupportedImageInputError: it reports a capability, not a
+    value the caller mistyped. The message names the remedy, because the provider's own
+    rejection of these cases is often generic -- Veo answers an unsupported combination
+    with "Unsupported video generation request" and a link to its docs index."""
+
+    def __init__(self, service: str, model: str, message: str) -> None:
+        super().__init__(f"{model!r} on {service!r}: {message}")
+        self.service = service
+        self.model = model
+
+
 class MissingCredentialsError(ModelClientError, ValueError):
     """No API key was found for a provider that requires one.
 

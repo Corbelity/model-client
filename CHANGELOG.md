@@ -22,6 +22,23 @@ explicitly, so a minor bump is worth reading before you take it.
   the compatibility route alongside the native one. Each route has its own model, because
   a model id is both the catalog's key and the name sent to the API, so one id cannot
   appear twice.
+- The `VIDEO` modality's request types, ahead of any provider generating video:
+  `VideoInputs` names each input by role (`first_frame`, `last_frame`, `references`,
+  `extend`), because an image means different things in video and a positional list
+  would make "which is the first frame" an ordering convention. `VideoInput` is either
+  bytes or a provider's handle to a video it holds; `VideoOptions` carries the output
+  settings. `sniff_video_mime()` recognises MP4, QuickTime and WebM, and
+  `MediaResult.source_uri` carries a provider's handle to what it produced (recorded in
+  the trace).
+- Per-model video capability in the catalog: an optional `video` block (inputs, reference
+  cap, aspect ratios, resolutions, durations, audio policy) with a three-verb constraint
+  table (`require`, `require_input`, `exclude_input`). What a block states is enforced
+  before the network; a model without one is passed through. See DESIGN.md, "Enforced
+  when stated".
+- `resolve_video_request()`: judges a video request with no client, credential or network
+  call, returning the settings a real submission would send or raising what it would
+  raise. New errors `UnsupportedVideoSettingError` (a `ValueError`) and
+  `UnsupportedVideoInputError`.
 - `ModelResult.output_reasoning_tokens`: tokens a model spent thinking. Billed at the
   output rate but never in the text, so a cost computed from `output_text_tokens` alone
   undercounts a reasoning model. Recorded in the trace's `usage` block.

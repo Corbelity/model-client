@@ -212,7 +212,7 @@ class JsonlTraceLogger:
             # afterwards without opening every file and measuring it.
             produced = {
                 field: getattr(result, field, None)
-                for field in ("size", "quality", "output_format", "background")
+                for field in ("size", "quality", "output_format", "background", "source_uri")
             }
             if any(value is not None for value in produced.values()):
                 rendered["produced"] = produced

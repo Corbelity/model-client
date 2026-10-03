@@ -179,14 +179,31 @@ BUILTIN_SPECS: tuple[ProviderSpec, ...] = (
         extra="gemini",
         key_env=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
         base_url_env=("GEMINI_BASE_URL",),
-        # Google's OpenAI-compatibility endpoint. Text only for now: image generation is
-        # unverified through this shim, and audio generation runs over the bidirectional
-        # Live API, which is a streaming session rather than a request/response call and
-        # therefore does not fit this interface at all. Both wait for a native provider
-        # built on google-genai.
+        # Google's OpenAI-compatibility endpoint. Text only, and it stays that way: image
+        # generation is unverified through this shim, and audio generation runs over the
+        # bidirectional Live API, which does not fit a request/response interface. The
+        # native provider (`gemini-native`, below) is where new Gemini capability lands;
+        # this service is kept unchanged so nothing written against it breaks.
         default_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         modalities=frozenset({TEXT}),
         aliases=("google", "google-gemini"),
+    ),
+    ProviderSpec(
+        name="gemini-native",
+        client_path=f"{_PROVIDERS_MODULE}.gemini_native:GeminiNativeClient",
+        extra="gemini-native",
+        # The same credential names as the compatibility shim, in the same order, so one
+        # key serves both. Resolved here and passed to the SDK explicitly: left to itself,
+        # google-genai prefers GOOGLE_API_KEY over GEMINI_API_KEY -- the opposite order.
+        key_env=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        # A separate variable from the shim's GEMINI_BASE_URL: that one points at the
+        # OpenAI-compatibility path, and pointing the native SDK at it would fail.
+        base_url_env=("GEMINI_NATIVE_BASE_URL",),
+        # No default: the SDK's own endpoint is correct, the same reasoning as `openai`.
+        # Text only for now. Video, image and speech land on this same service in later
+        # releases, as the routes behind them are verified.
+        modalities=frozenset({TEXT}),
+        aliases=("google-genai", "gemini-genai"),
     ),
     ProviderSpec(
         name="ollama-local",

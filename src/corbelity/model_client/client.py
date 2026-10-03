@@ -67,11 +67,19 @@ from .trace import TraceSink
 #   Anthropic           : clean = "end_turn";           bad = "max_tokens", "refusal"
 #   Ollama              : clean = "stop";               bad = "length"
 #   HuggingFace / TGI   : clean = "stop" / "eos_token"; bad = "length"
+#   Gemini (native)     : clean = "STOP";               bad = "MAX_TOKENS", "SAFETY",
+#                         "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII",
+#                         "IMAGE_SAFETY", "LANGUAGE", "OTHER", and "prompt_blocked" -- not a
+#                         Gemini value, but what the provider reports when the PROMPT was
+#                         refused and no candidate came back at all.
 # "tool_use" / "tool_calls" / "stop_sequence" are normal completions, intentionally absent.
 # "error" is OpenRouter failing MID-STREAM: it still returns the partial text it had, with
 # no usage block, so the only signal that the answer is cut short is this finish reason.
+# Compared lower-cased, which is why Gemini's upper-case MAX_TOKENS already matched.
 INCOMPLETE_FINISH_REASONS = frozenset(
-    {"length", "max_tokens", "content_filter", "refusal", "error"}
+    {"length", "max_tokens", "content_filter", "refusal", "error",
+     "safety", "recitation", "blocklist", "prohibited_content", "spii", "image_safety",
+     "language", "other", "prompt_blocked"}
 )
 
 

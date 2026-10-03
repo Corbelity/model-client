@@ -154,6 +154,9 @@ class JsonlTraceLogger:
                     "input_cached_tokens": getattr(result, "input_cached_tokens", None),
                     "output_text_tokens": getattr(result, "output_text_tokens", None),
                     "output_image_tokens": getattr(result, "output_image_tokens", None),
+                    "output_reasoning_tokens": getattr(
+                        result, "output_reasoning_tokens", None
+                    ),
                 },
                 "finish_reason": getattr(result, "finish_reason", None),
                 "error": error,

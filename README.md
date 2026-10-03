@@ -44,6 +44,7 @@ pip install "corbelity-model-client[anthropic]"
 pip install "corbelity-model-client[openai]"
 pip install "corbelity-model-client[openrouter]"
 pip install "corbelity-model-client[gemini]"
+pip install "corbelity-model-client[gemini-native]"
 pip install "corbelity-model-client[ollama]"
 pip install "corbelity-model-client[huggingface]"
 pip install "corbelity-model-client[all]"
@@ -65,6 +66,7 @@ call site says plainly which one it is using.
 | `openai` | OpenAI API, direct | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | `openrouter` | OpenRouter, cloud | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` |
 | `gemini` | Gemini, via Google's OpenAI-compatible endpoint | `GEMINI_API_KEY`, `GOOGLE_API_KEY` | `GEMINI_BASE_URL` |
+| `gemini-native` | Gemini, via Google's own SDK (`google-genai`) | `GEMINI_API_KEY`, `GOOGLE_API_KEY` | `GEMINI_NATIVE_BASE_URL` |
 | `ollama-local` | Ollama on a local host | none — the box is trusted | `LOCAL_OLLAMA_URL`, `OLLAMA_HOST` (**required**) |
 | `ollama` | Ollama Cloud | `OLLAMA_API_KEY` | `OLLAMA_CLOUD_URL` |
 | `huggingface` | HuggingFace Inference | `HF_TOKEN`, `HUGGINGFACE_HUB_KEY`, `HUGGINGFACEHUB_API_TOKEN` | fixed |
@@ -82,21 +84,43 @@ That answers without importing an SDK or needing a credential, so a caller can r
 impossible request before spending anything on it.
 
 Common aliases fold onto the canonical names (`hf` → `huggingface`, `open_router` →
-`openrouter`, `google` → `gemini`, `ollama-cloud` → `ollama`), and names are trimmed and
+`openrouter`, `google` → `gemini`, `google-genai` → `gemini-native`, `ollama-cloud` → `ollama`), and names are trimmed and
 lower-cased.
 
 ### A note on Gemini
 
-`gemini` reaches Google's models through their **OpenAI-compatibility endpoint**, which is
-a shim — Google's own guidance is that if you aren't already using the OpenAI libraries,
-you should call the Gemini API directly. It's here because it gets Gemini text working
-through the existing dialect with no new dependency.
+There are two Gemini services, and they reach the same models by different routes.
 
-So `gemini` is text-only today. Image generation through the shim is unverified, and audio
-generation runs over the Live API, which is a bidirectional streaming session rather than a
-request/response call and so can't be wrapped honestly by `generate_speech()`. Both wait
-for a native provider built on `google-genai`, which will arrive as a **separate service**
-rather than a change to this one — so code written against the shim won't break.
+**`gemini-native`** uses Google's own SDK, `google-genai`. This is the route Google
+recommends, and the one where Gemini's other capabilities (video, images, speech) arrive.
+Text today, with history and image attachments, under the same contract as every other
+provider:
+
+```python
+client = make_model_client("gemini-native", model="gemini-3.8-flash")
+client.complete("Be terse.", "Summarise this.", images=[ImageInput.from_bytes(png)])
+client.last_result.output_reasoning_tokens   # tokens spent thinking, billed as output
+```
+
+Three things behave differently from the chat-completions providers, all on purpose:
+
+- **`completion_tokens` includes thinking.** Gemini reports reasoning tokens separately
+  from the answer's, but bills them as output, so the flat figure adds them back. The split
+  is on `output_text_tokens` and `output_reasoning_tokens`.
+- **Thinking spends the output cap.** A low `max_tokens` can be used up entirely by
+  reasoning, which comes back as `finish_reason="MAX_TOKENS"` with empty text (and a
+  warning). Raise the cap.
+- **A refused prompt** returns no answer at all; it is reported as
+  `finish_reason="prompt_blocked"` with empty text, and the block reason is logged.
+
+The key is read from `GEMINI_API_KEY`, then `GOOGLE_API_KEY`, and passed to the SDK
+explicitly. The SDK is pinned to the Gemini Developer API: it does not switch to Vertex AI
+because `GOOGLE_GENAI_USE_VERTEXAI` happens to be set in the environment.
+
+**`gemini`** goes through Google's **OpenAI-compatibility endpoint**, a shim that gets
+Gemini text working through the chat-completions dialect with no extra dependency. It is
+text-only and stays exactly as it was, so code written against it keeps working. One key
+serves both services, so `available_services()` reports both when it is set.
 
 ## Usage
 

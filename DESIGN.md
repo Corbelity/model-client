@@ -92,7 +92,10 @@ Where several providers speak the same wire protocol, the shared half lives in a
 intermediate base and the leaves carry only a `SPEC`. Three services use the OpenAI
 chat-completions dialect through the same SDK — OpenRouter, OpenAI directly, and Gemini's
 compatibility endpoint — so `OpenAICompatibleClient` holds the request and response
-handling and each leaf is about a dozen lines. The two Ollama clients share a base the
+handling and each leaf is about a dozen lines. Gemini also has a native provider,
+`gemini-native`, on Google's own SDK. It is a separate service with its own `_invoke()`,
+because it speaks a different protocol, and the compatibility route stays exactly as it
+was: the test is protocol, and the same vendor on two protocols is two providers. The two Ollama clients share a base the
 same way. The test is protocol, not vendor: a provider gets its own `_invoke()` when it
 speaks differently, not when it bills differently.
 
@@ -501,10 +504,27 @@ set with the vocabularies documented beside it:
 | Anthropic | `end_turn` | `max_tokens`, `refusal` |
 | Ollama | `stop` | `length` |
 | HuggingFace / TGI | `stop`, `eos_token` | `length` |
+| Gemini (native) | `STOP` | `MAX_TOKENS`, `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `IMAGE_SAFETY`, `LANGUAGE`, `OTHER`, `prompt_blocked` |
 
 `tool_use`, `tool_calls` and `stop_sequence` are normal completions and are intentionally
 absent. `error` is OpenRouter failing mid-stream: it returns the partial text it had with
 no usage block, so this finish reason is the *only* signal that the answer is cut short.
+
+Gemini adds two cases worth knowing about, because both look like silence rather than an
+error:
+
+- **`prompt_blocked` is not a Gemini value.** When Gemini refuses the *prompt*, no
+  candidate comes back at all, only `prompt_feedback.block_reason`. The provider reports
+  that as `prompt_blocked` with empty text, so the empty-response warning names a reason
+  instead of `None`, and logs the block reason itself, which is the difference between
+  "rephrase" and "this will never be answered".
+- **Thinking spends the output cap.** Reasoning models draw their thinking from
+  `max_output_tokens`, so a low cap can be exhausted before any answer is written:
+  `MAX_TOKENS` with empty text. The warning fires correctly; the fix is a larger cap.
+
+Gemini's finish reasons arrive as an enum whose `str()` is `"FinishReason.STOP"`, not
+`"STOP"`. The provider reports the enum's value. Passing the enum through would have made
+this whole table inert for Gemini: the lower-cased comparison would never match.
 
 ## 13. What is deliberately not here
 

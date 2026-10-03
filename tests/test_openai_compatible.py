@@ -185,12 +185,14 @@ class TestNewProviderRegistration:
         assert get_spec("gemini").key_env == ("GEMINI_API_KEY", "GOOGLE_API_KEY")
 
     @pytest.mark.parametrize(
-        ("env_name", "service"),
-        [("OPENAI_API_KEY", "openai"), ("GEMINI_API_KEY", "gemini"),
-         ("GOOGLE_API_KEY", "gemini")],
+        ("env_name", "services"),
+        # One Google key serves both Gemini routes -- the compatibility shim and the
+        # native provider share their credential names, so both are available together.
+        [("OPENAI_API_KEY", ("openai",)), ("GEMINI_API_KEY", ("gemini", "gemini-native")),
+         ("GOOGLE_API_KEY", ("gemini", "gemini-native"))],
     )
-    def test_availability_detection(self, env_name: str, service: str) -> None:
-        assert available_services(env={env_name: "k"}) == (service,)
+    def test_availability_detection(self, env_name: str, services: tuple[str, ...]) -> None:
+        assert available_services(env={env_name: "k"}) == services
 
     def test_every_new_catalog_entry_is_reachable(self) -> None:
         for model_id in ("gpt-5.6-terra", "gpt-image-2.5-flare", "gpt-4o-mini-tts",

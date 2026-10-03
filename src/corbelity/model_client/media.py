@@ -53,6 +53,12 @@ class ModelResult:
     # input fields above so the two halves read symmetrically.
     output_text_tokens: int | None = None
     output_image_tokens: int | None = None
+    # Tokens the model spent thinking before it answered. Billed at the output rate but
+    # never seen in the text, so a caller reading only output_text_tokens undercounts the
+    # cost of a reasoning model -- sometimes by a multiple. Included in completion_tokens
+    # where the provider reports it separately (Gemini), so the flat figure stays the
+    # billed figure; this field is the split, additive like the others.
+    output_reasoning_tokens: int | None = None
 
 
 @dataclass(kw_only=True)

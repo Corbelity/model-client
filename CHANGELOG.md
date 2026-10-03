@@ -11,7 +11,25 @@ explicitly, so a minor bump is worth reading before you take it.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `gemini-native` service: Gemini through Google's own SDK (`google-genai`), installed with
+  the new `[gemini-native]` extra. Text, with history and image attachments, under the
+  same contract as every other provider. A separate service from `gemini`, which is
+  unchanged. Aliases `google-genai` and `gemini-genai`; endpoint override
+  `GEMINI_NATIVE_BASE_URL`.
+- `ModelResult.output_reasoning_tokens`: tokens a model spent thinking. Billed at the
+  output rate but never in the text, so a cost computed from `output_text_tokens` alone
+  undercounts a reasoning model. Recorded in the trace's `usage` block.
+
+### Changed
+
+- `INCOMPLETE_FINISH_REASONS` gains Gemini's unclean finishes (`safety`, `recitation`,
+  `blocklist`, `prohibited_content`, `spii`, `image_safety`, `language`, `other`) and
+  `prompt_blocked`, the value `gemini-native` reports when the prompt itself is refused.
+  Each now logs a warning, as a truncated answer already did.
+- `available_services()` reports `gemini-native` alongside `gemini` when
+  `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set, since one key serves both.
 
 ## [0.3.0] - 2026-09-30
 

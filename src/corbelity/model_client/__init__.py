@@ -13,6 +13,7 @@ call site says plainly which one it is using:
     anthropic     Anthropic API, direct
     openai        OpenAI API, direct -- text, image and sound
     gemini        Gemini, via Google's OpenAI-compatibility endpoint (text only)
+    gemini-native Gemini, via Google's own SDK (google-genai)
     openrouter    OpenRouter, cloud
     ollama-local  Ollama running on the local host
     ollama        Ollama Cloud

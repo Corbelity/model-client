@@ -108,6 +108,14 @@ Three rules that look like details and are not:
   Adding keywords to `TraceSink.llm_call()` would break every third-party sink written
   against its exact signature, and a test holds a sink with no `**kwargs` to that.
 
+Each record carries its own payloads as files beside the trace, never inline: the frames
+and clips sent go with the submit record, named by role, and the video with the terminal
+one. That has to be rendered explicitly for every input type, because records are
+serialised with `default=str` -- an input object nobody rendered would be written as its
+repr, bytes and all. A test reads the raw JSONL to hold that line.
+`JsonlTraceLogger(video_artifacts=False)` keeps the records and drops the files, for an
+application that already stores its own videos.
+
 The library serializes a job (`VideoJobRef.to_dict()`); the application stores it. Owning
 persistence would mean owning a database, threads and shared state, none of which belong in
 a client library. The provider seam is three methods -- `_submit_video`, `_poll_video`,

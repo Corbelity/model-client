@@ -187,7 +187,8 @@ class TestSubmit:
         job = record["request"]["job"]
         assert job == {"phase": "submit", "latency_kind": "round_trip",
                        "operation": "operations/1"}
-        assert record["request"]["inputs"] == ["references"]
+        assert list(record["request"]["inputs"]) == ["references"]
+        assert record["request"]["inputs"]["references"][0]["name"].endswith("-ref0.png")
         # What was asked for and what a constraint filled in, kept apart.
         assert record["request"]["requested"] == {"seed": 7}
         assert record["request"]["resolved"] == {"duration_seconds": 8, "seed": 7}

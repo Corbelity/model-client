@@ -676,8 +676,17 @@ class ModelClient[ClientT](ABC):
         # keywords to llm_call() would break every third-party sink written against its
         # exact signature.
         job: dict[str, Any] = {"phase": "submit", "latency_kind": "round_trip"}
-        request: dict[str, Any] = {"prompt": prompt, "inputs": list(inputs.roles()),
-                                   "job": job}
+        # The inputs themselves, by role: the trace writes each frame or clip as a
+        # role-named artifact beside the record (a provider handle is kept as the handle).
+        supplied: dict[str, Any] = {
+            "first_frame": inputs.first_frame, "last_frame": inputs.last_frame,
+            "references": list(inputs.references), "extend": inputs.extend,
+        }
+        request: dict[str, Any] = {
+            "prompt": prompt,
+            "inputs": {role: supplied[role] for role in inputs.roles()},
+            "job": job,
+        }
         if asked:
             request["requested"] = asked.requested()
         if sent != asked:

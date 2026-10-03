@@ -46,6 +46,12 @@ explicitly, so a minor bump is worth reading before you take it.
   `LookupError`). `ModelConfig` gains `video_poll_interval_s` (10) and
   `video_wait_timeout_s` (600), read from `CORBELITY_VIDEO_POLL_INTERVAL` and
   `CORBELITY_VIDEO_WAIT_TIMEOUT`. No provider implements the seam yet.
+- Video in the trace. A job's inputs are written with its submit record as role-named
+  artifacts (`<run>-<seq>-first.png`, `-last`, `-ref0`..`-ref2`, `-extend.mp4`); a clip
+  passed as a provider handle is recorded as the handle and never downloaded. The video
+  itself is written with the terminal record. `JsonlTraceLogger(video_artifacts=False)`
+  keeps every video record in full but writes no payload files for video calls, for an
+  application that already stores its videos.
 - `resolve_video_request()`: judges a video request with no client, credential or network
   call, returning the settings a real submission would send or raising what it would
   raise. New errors `UnsupportedVideoSettingError` (a `ValueError`) and
@@ -65,6 +71,9 @@ explicitly, so a minor bump is worth reading before you take it.
   one, because a model id is both the catalog's key and the name sent to the API. A user
   catalog that reuses a built-in id still overrides it as before: only a repeat within one
   file is refused.
+- A trace artifact that could not be written (a full disk, say) is now marked in its
+  descriptor with `write_failed`, rather than naming a file that does not exist. The call
+  and the record are unaffected, as before.
 - `available_services()` reports `gemini-native` alongside `gemini` when
   `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set, since one key serves both.
 - **`gemini-3.8-flash` now names `gemini-native` in the built-in catalog.** Anything that

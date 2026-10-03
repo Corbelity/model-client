@@ -15,8 +15,9 @@ from typing import Any
 from .catalog import ModelCatalog, load_catalog
 from .client import ModelClient
 from .config import ModelConfig, get_default_config
-from .media import aspect_ratios_of
+from .media import VideoInputs, VideoOptions, aspect_ratios_of
 from .registry import DEFAULT_REGISTRY, ProviderSpec
+from .video import resolve_request
 
 
 def resolve_service(service: str | None = None, *, config: ModelConfig | None = None) -> str:
@@ -98,6 +99,26 @@ def supported_output_formats(service: str | None = None, *,
     Empty means it offers no choice, not that it produces nothing -- it produces whatever
     its own default is, which `provider_spec(...).image_default_format` names when known."""
     return provider_spec(service, config=config).image_output_formats
+
+
+def resolve_video_request(service: str | None, model: str,
+                          inputs: VideoInputs | None = None,
+                          options: VideoOptions | None = None, *,
+                          config: ModelConfig | None = None) -> VideoOptions:
+    """Judge a video request without building a client, holding a credential, or touching
+    the network. Returns the options a real submission would send, or raises exactly what
+    it would raise.
+
+    The same function a submission uses, so a UI that checks a combination before
+    offering it gets the real answer -- not a re-implementation that drifts. Reads the
+    unfiltered catalog, like the client does."""
+    settings = config if config is not None else get_default_config()
+    entry = load_catalog(settings.catalog_path).get(model)
+    return resolve_request(
+        provider_spec(service, config=settings), model, entry,
+        inputs if inputs is not None else VideoInputs(),
+        options if options is not None else VideoOptions(),
+    )
 
 
 def make_model_client(service: str | None = None, **kwargs: Any) -> ModelClient[Any]:

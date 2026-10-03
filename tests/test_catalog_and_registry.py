@@ -63,6 +63,38 @@ class TestCatalog:
         with pytest.raises(ValueError, match="missing a string 'id'"):
             ModelCatalog.from_json(json.dumps([{"service": "openrouter"}]))
 
+    def test_duplicate_id_fails_the_load(self) -> None:
+        # Keyed by id, a duplicate would otherwise load and the earlier entry would vanish.
+        text = json.dumps([
+            {"id": "a", "service": "openrouter"},
+            {"id": "b", "service": "openrouter"},
+            {"id": "a", "service": "openai"},
+        ])
+        with pytest.raises(ValueError, match=r"'a' \(entries 1, 3\)") as err:
+            ModelCatalog.from_json(text)
+        assert "'b'" not in str(err.value)
+
+    def test_every_duplicate_is_named(self) -> None:
+        text = json.dumps([{"id": i, "service": "openrouter"} for i in "abab"])
+        with pytest.raises(ValueError, match=r"'a' \(entries 1, 3\); 'b' \(entries 2, 4\)"):
+            ModelCatalog.from_json(text)
+
+    def test_a_user_file_with_a_duplicate_names_the_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "my-models.json"
+        path.write_text(json.dumps([
+            {"id": "x", "service": "openrouter"}, {"id": "x", "service": "openrouter"},
+        ]), encoding="utf-8")
+        with pytest.raises(ValueError, match="my-models.json"):
+            load_catalog(path)
+
+    def test_overriding_a_builtin_id_is_not_a_duplicate(self, tmp_path: Path) -> None:
+        # One file overriding another is the design; only repeats WITHIN a file fail.
+        existing = next(iter(builtin_catalog()))
+        path = tmp_path / "models.json"
+        path.write_text(json.dumps([{"id": existing.id, "service": existing.service}]),
+                        encoding="utf-8")
+        assert load_catalog(path).get(existing.id) is not None
+
     def test_filtering(self) -> None:
         catalog = builtin_catalog()
         assert all(e.service == "huggingface" for e in catalog.for_service("huggingface"))

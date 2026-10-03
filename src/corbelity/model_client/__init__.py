@@ -1,4 +1,4 @@
-"""Provider-agnostic, traced access to text, image and speech model APIs.
+"""Provider-agnostic, traced access to text, image, speech and video model APIs.
 
 Quick start
 -----------
@@ -13,13 +13,15 @@ call site says plainly which one it is using:
     anthropic     Anthropic API, direct
     openai        OpenAI API, direct -- text, image and sound
     gemini        Gemini, via Google's OpenAI-compatibility endpoint (text only)
+    gemini-native Gemini, via Google's own SDK (google-genai) -- text and video (Veo)
     openrouter    OpenRouter, cloud
     ollama-local  Ollama running on the local host
     ollama        Ollama Cloud
     huggingface   HuggingFace Inference -- text, image and sound
 
 Text is the common denominator; only openai and huggingface generate images and speech,
-and each does so through its own SDK surface rather than through chat completions. Ask a
+and only gemini-native generates video, each through its own SDK surface rather than
+through chat completions. Ask a
 service for something it cannot produce and it raises UnsupportedModalityError before any
 network call -- supported_modalities() answers the same question without even importing
 the provider.
@@ -35,10 +37,18 @@ from __future__ import annotations
 
 import logging
 
-from .catalog import ModelCatalog, ModelInfo, builtin_catalog, load_catalog
+from .catalog import (
+    ModelCatalog,
+    ModelInfo,
+    VideoCapabilities,
+    VideoConstraint,
+    builtin_catalog,
+    load_catalog,
+)
 from .client import INCOMPLETE_FINISH_REASONS, ModelClient, load_sdk
 from .config import ModelConfig, get_default_config, set_default_config
 from .errors import (
+    ContentFilteredError,
     MissingBaseUrlError,
     MissingCredentialsError,
     MissingDependencyError,
@@ -52,6 +62,12 @@ from .errors import (
     UnsupportedModalityError,
     UnsupportedQualityError,
     UnsupportedSizeError,
+    UnsupportedVideoInputError,
+    UnsupportedVideoSettingError,
+    VideoJobFailedError,
+    VideoJobNotFoundError,
+    VideoNotReadyError,
+    VideoTimeoutError,
 )
 from .factory import (
     available_services,
@@ -61,6 +77,7 @@ from .factory import (
     make_model_client,
     provider_spec,
     resolve_service,
+    resolve_video_request,
     supported_aspect_ratios,
     supported_image_backgrounds,
     supported_image_qualities,
@@ -69,6 +86,7 @@ from .factory import (
     supported_modalities,
     supported_output_formats,
 )
+from .jobs import VideoJob, VideoJobRef, VideoPoll, VideoStatus, VideoSubmission
 from .media import (
     ALPHA_FORMATS,
     COMPRESSIBLE_FORMATS,
@@ -76,36 +94,47 @@ from .media import (
     IMAGE,
     SOUND,
     SUPPORTED_IMAGE_MIMES,
+    SUPPORTED_VIDEO_MIMES,
     TEXT,
+    VIDEO,
+    VIDEO_ROLES,
     ImageInput,
     ImageOptions,
     LLMResult,
     MediaResult,
     ModelResult,
+    VideoInput,
+    VideoInputs,
+    VideoOptions,
     aspect_ratios_of,
     parse_aspect_ratio,
     parse_size,
     sizes_for_ratio,
     sniff_audio_mime,
     sniff_image_mime,
+    sniff_video_mime,
     validate_images,
 )
 from .messages import History, Message, validate_history
 from .registry import ProviderSpec, get_spec, register_provider
 from .trace import JsonlTraceLogger, NullTrace, TraceSink, make_trace_logger, trace_file_path
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "IMAGE",
     "INCOMPLETE_FINISH_REASONS",
     "SOUND",
     "SUPPORTED_IMAGE_MIMES",
+    "SUPPORTED_VIDEO_MIMES",
     "TEXT",
+    "VIDEO",
+    "VIDEO_ROLES",
     "History",
     "ImageInput",
     "ALPHA_FORMATS",
     "COMPRESSIBLE_FORMATS",
+    "ContentFilteredError",
     "FORMAT_MIMES",
     "ImageOptions",
     "JsonlTraceLogger",
@@ -133,6 +162,22 @@ __all__ = [
     "UnsupportedModalityError",
     "UnsupportedQualityError",
     "UnsupportedSizeError",
+    "UnsupportedVideoInputError",
+    "UnsupportedVideoSettingError",
+    "VideoCapabilities",
+    "VideoConstraint",
+    "VideoInput",
+    "VideoInputs",
+    "VideoJob",
+    "VideoJobFailedError",
+    "VideoJobNotFoundError",
+    "VideoJobRef",
+    "VideoNotReadyError",
+    "VideoOptions",
+    "VideoPoll",
+    "VideoStatus",
+    "VideoSubmission",
+    "VideoTimeoutError",
     "__version__",
     "aspect_ratios_of",
     "available_services",
@@ -151,10 +196,12 @@ __all__ = [
     "provider_spec",
     "register_provider",
     "resolve_service",
+    "resolve_video_request",
     "set_default_config",
     "sizes_for_ratio",
     "sniff_audio_mime",
     "sniff_image_mime",
+    "sniff_video_mime",
     "supported_aspect_ratios",
     "supported_image_backgrounds",
     "supported_image_qualities",

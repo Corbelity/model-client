@@ -44,10 +44,61 @@
     {
         "id": "gemini-3.8-flash",
         "name": "Gemini 3.8 Flash",
+        "service": "gemini-native",
+        "modality": "text",
+        "description": "Gemini via Google's own SDK (google-genai).",
+        "accepts_images": true
+    },
+    {
+        "id": "gemini-3.5-flash-lite",
+        "name": "Gemini 3.5 Flash-Lite (compatibility endpoint)",
         "service": "gemini",
         "modality": "text",
-        "description": "Gemini via Google's OpenAI-compatibility endpoint.",
+        "description": "Gemini via Google's OpenAI-compatibility endpoint -- the route for code already on the OpenAI libraries.",
         "accepts_images": true
+    },
+    {
+        "id": "veo-3.1-generate-preview",
+        "name": "Veo 3.1",
+        "service": "gemini-native",
+        "modality": "video",
+        "description": "Video with audio from text, a start frame, or start and end frames. Up to 4K.",
+        "accepts_images": true,
+        "video": {
+            "inputs": ["first_frame", "last_frame"],
+            "max_references": 3,
+            "aspect_ratios": ["16:9", "9:16"],
+            "resolutions": ["720p", "1080p", "4k"],
+            "durations": [4, 6, 8],
+            "audio": "always",
+            "constraints": [
+                {"when": "last_frame", "require_input": "first_frame"},
+                {"when": "resolution:1080p", "require": {"duration_seconds": 8}},
+                {"when": "resolution:4k", "require": {"duration_seconds": 8}},
+                {"when": "references", "require": {"duration_seconds": 8, "aspect_ratio": "16:9"}},
+                {"when": "references", "exclude_input": ["first_frame", "last_frame"]},
+                {"when": "extend", "require": {"resolution": "720p"}}
+            ]
+        }
+    },
+    {
+        "id": "veo-3.1-lite-generate-preview",
+        "name": "Veo 3.1 Lite",
+        "service": "gemini-native",
+        "modality": "video",
+        "description": "Lower-cost Veo: text, a start frame, or start and end frames. Up to 1080p.",
+        "accepts_images": true,
+        "video": {
+            "inputs": ["first_frame", "last_frame"],
+            "aspect_ratios": ["16:9", "9:16"],
+            "resolutions": ["720p", "1080p"],
+            "durations": [4, 6, 8],
+            "audio": "always",
+            "constraints": [
+                {"when": "last_frame", "require_input": "first_frame"},
+                {"when": "resolution:1080p", "require": {"duration_seconds": 8}}
+            ]
+        }
     },
     {
         "id": "anthropic/claude-sonnet-4.5",

@@ -7,9 +7,9 @@ A trace is the record you need when a run produced a surprising answer and the I
 line ("23 tokens, 842 ms") is not enough to reconstruct why. Nothing is truncated; a
 trimmed trace cannot reproduce the call.
 
-Binary payloads (generated images and audio, and attached input images) are NOT inlined:
-each is written beside the trace as a named file and the record keeps
-{name, mime_type, bytes}. A single generated PNG can run to megabytes, and base64 in a
+Binary payloads (generated images, audio and video, and attached input images and
+video) are NOT inlined: each is written beside the trace as a named file and the record
+keeps {name, mime_type, bytes}. A single generated PNG can run to megabytes, and base64 in a
 JSONL line makes the trace unreadable, while a filename means you can still open the
 thing the model actually produced.
 
@@ -89,7 +89,14 @@ _MIME_SUFFIXES = {
     "audio/flac": ".flac",
     "audio/ogg": ".ogg",
     "audio/mpeg": ".mp3",
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/webm": ".webm",
 }
+
+# Video request inputs, by role, and the artifact-name suffix each gets, so a trace
+# directory reads at a glance: <run>-<seq>-first.png, <run>-<seq>-ref1.png, ...
+_ROLE_SUFFIXES = {"first_frame": "-first", "last_frame": "-last", "extend": "-extend"}
 
 
 def _suffix_for(mime_type: str) -> str:
@@ -107,8 +114,15 @@ class JsonlTraceLogger:
     unlocked writes interleave into unparseable lines."""
 
     def __init__(self, path: Path | str, *, run_id: str | None = None,
-                 artifacts_dir: Path | str | None = None) -> None:
+                 artifacts_dir: Path | str | None = None,
+                 video_artifacts: bool = True) -> None:
+        """`video_artifacts=False` keeps every video record in full -- prompt, settings,
+        operation id, outcome, latency, and a descriptor of each payload -- but writes no
+        payload FILES for video calls: neither the generated video nor the frames and
+        clips sent with it. For an application that already stores its videos and does
+        not want a second multi-megabyte copy beside the trace."""
         self.path = Path(path)
+        self.video_artifacts = video_artifacts
         self.run_id = run_id or uuid.uuid4().hex[:8]
         self.artifacts_dir = (
             Path(artifacts_dir) if artifacts_dir else self.path.parent / "artifacts"
@@ -139,8 +153,8 @@ class JsonlTraceLogger:
                 "model": model,
                 "modality": modality,
                 "latency_ms": latency_ms,
-                "request": self._render_request(request, seq),
-                "response": self._render_response(result, seq),
+                "request": self._render_request(request, seq, modality),
+                "response": self._render_response(result, seq, modality),
                 "usage": {
                     "prompt_tokens": getattr(result, "prompt_tokens", None),
                     "completion_tokens": getattr(result, "completion_tokens", None),
@@ -154,6 +168,9 @@ class JsonlTraceLogger:
                     "input_cached_tokens": getattr(result, "input_cached_tokens", None),
                     "output_text_tokens": getattr(result, "output_text_tokens", None),
                     "output_image_tokens": getattr(result, "output_image_tokens", None),
+                    "output_reasoning_tokens": getattr(
+                        result, "output_reasoning_tokens", None
+                    ),
                 },
                 "finish_reason": getattr(result, "finish_reason", None),
                 "error": error,
@@ -165,15 +182,22 @@ class JsonlTraceLogger:
                 _logger.warning("Could not write trace record: %s", err)
             return record
 
-    def _render_request(self, request: Mapping[str, Any] | None, seq: int) -> dict[str, Any]:
+    def _render_request(self, request: Mapping[str, Any] | None, seq: int,
+                        modality: str = "") -> dict[str, Any]:
         """Input images get exactly the treatment generated ones already get: the payload
         becomes a file beside the trace and the record keeps a descriptor.
 
         The "no bytes in the JSONL" rule has to cover the request as well as the response
         -- a single attached photo inlined as base64 would make the line unreadable, which
         is the whole reason the rule exists. Keeping both halves here means there is one
-        place that decides it, rather than one in the writer and one in the client."""
+        place that decides it, rather than one in the writer and one in the client.
+
+        It matters more than it looks: the record is serialised with default=str, so an
+        input object nobody rendered would be written as its repr -- bytes and all."""
         rendered = dict(request) if request else {}
+        inputs = rendered.get("inputs")
+        if isinstance(inputs, Mapping):
+            rendered["inputs"] = self._render_video_inputs(inputs, seq, modality)
         images = rendered.get("images")
         if not images:
             return rendered
@@ -192,15 +216,55 @@ class JsonlTraceLogger:
         rendered["images"] = descriptors
         return rendered
 
-    def _render_response(self, result: Any, seq: int) -> dict[str, Any] | None:
+    def _render_video_inputs(self, inputs: Mapping[str, Any], seq: int,
+                             modality: str) -> dict[str, Any]:
+        """A video request's inputs, by role: each frame or reference becomes a
+        role-named artifact, and a clip to extend becomes one too -- unless it is a
+        provider handle, which is recorded as the handle and never downloaded."""
+        rendered: dict[str, Any] = {}
+        for role, value in inputs.items():
+            if role == "references":
+                rendered[role] = [
+                    self._input_descriptor(item, seq, f"-ref{n}", modality)
+                    for n, item in enumerate(value or ())
+                ]
+            elif getattr(value, "uri", None):
+                rendered[role] = {"uri": value.uri}
+            else:
+                suffix = _ROLE_SUFFIXES.get(role, f"-{role}")
+                rendered[role] = self._input_descriptor(value, seq, suffix, modality)
+        return rendered
+
+    def _input_descriptor(self, item: Any, seq: int, suffix: str,
+                          modality: str) -> dict[str, Any]:
+        descriptor = self._artifact(
+            bytes(getattr(item, "data", b"") or b""),
+            getattr(item, "mime_type", "") or "", seq, suffix, modality,
+        )
+        source_name = getattr(item, "name", None)
+        if source_name:
+            descriptor["source_name"] = source_name
+        return descriptor
+
+    def _artifact(self, data: bytes, mime_type: str, seq: int, suffix: str,
+                  modality: str) -> dict[str, Any]:
+        """Write a payload, or -- for a video call with video_artifacts off -- describe it
+        without writing it. Either way the record says how big it was and what it was."""
+        if modality == "video" and not self.video_artifacts:
+            return {"name": None, "mime_type": mime_type, "bytes": len(data),
+                    "not_written": "video_artifacts is off"}
+        return self._write_artifact(data, mime_type, seq, suffix=suffix)
+
+    def _render_response(self, result: Any, seq: int,
+                         modality: str = "") -> dict[str, Any] | None:
         if result is None:
             return None
 
         data = getattr(result, "data", None)
         if isinstance(data, bytes | bytearray):
             rendered: dict[str, Any] = {
-                "artifact": self._write_artifact(
-                    bytes(data), getattr(result, "mime_type", ""), seq
+                "artifact": self._artifact(
+                    bytes(data), getattr(result, "mime_type", ""), seq, "", modality
                 )
             }
             # What the provider says it produced, recorded beside the artifact. The trace
@@ -209,7 +273,7 @@ class JsonlTraceLogger:
             # afterwards without opening every file and measuring it.
             produced = {
                 field: getattr(result, field, None)
-                for field in ("size", "quality", "output_format", "background")
+                for field in ("size", "quality", "output_format", "background", "source_uri")
             }
             if any(value is not None for value in produced.values()):
                 rendered["produced"] = produced
@@ -231,12 +295,16 @@ class JsonlTraceLogger:
         `suffix` discriminates several artifacts from one call -- a vision request's inputs
         and the call's own output otherwise collide on <run_id>-<seq>."""
         name = f"{self.run_id}-{seq:03d}{suffix}{_suffix_for(mime_type)}"
+        descriptor: dict[str, Any] = {"name": name, "mime_type": mime_type, "bytes": len(data)}
         try:
             self.artifacts_dir.mkdir(parents=True, exist_ok=True)
             (self.artifacts_dir / name).write_bytes(data)
         except OSError as err:
             _logger.warning("Could not write trace artifact %s: %s", name, err)
-        return {"name": name, "mime_type": mime_type, "bytes": len(data)}
+            # Said in the record too: a descriptor naming a file that was never written
+            # sends whoever reads the trace looking for something that does not exist.
+            descriptor["write_failed"] = str(err)
+        return descriptor
 
 
 def trace_file_path() -> Path:

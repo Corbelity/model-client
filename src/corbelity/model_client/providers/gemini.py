@@ -15,10 +15,16 @@ Text only, deliberately:
     at all, and streaming is an explicit non-goal (DESIGN.md, "What is deliberately not
     here"), so `generate_speech()` could not honestly wrap it.
 
-Both wait for a native provider built on `google-genai`, where image output and a
-request/response TTS route both exist. When that lands, it becomes a second service
-rather than a change to this one -- the same way `ollama-local` and `ollama` coexist --
-so anyone depending on this shim is not broken by it.
+The native provider built on `google-genai` now exists as a second service,
+`gemini-native` (providers/gemini_native.py), and is where Gemini's other capabilities
+land. This service is deliberately left unchanged -- the same way `ollama-local` and
+`ollama` coexist -- so anyone depending on the shim is not broken by it.
+
+The built-in catalog lists the flagship Gemini model under `gemini-native`, and a second
+model under this service as a worked example of the compatibility route -- a different
+model, because a catalog id is also the name sent to the API and cannot appear twice.
+Routing follows the service name a caller passes, never the catalog, so naming `gemini`
+explicitly reaches this shim for any model.
 """
 from __future__ import annotations
 

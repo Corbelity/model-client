@@ -16,8 +16,9 @@ from typing import Any
 TEXT = "text"
 IMAGE = "image"
 SOUND = "sound"
+VIDEO = "video"
 
-ALL_MODALITIES = frozenset({TEXT, IMAGE, SOUND})
+ALL_MODALITIES = frozenset({TEXT, IMAGE, SOUND, VIDEO})
 
 
 # --------------------------------------------------------------------------- #
@@ -53,6 +54,12 @@ class ModelResult:
     # input fields above so the two halves read symmetrically.
     output_text_tokens: int | None = None
     output_image_tokens: int | None = None
+    # Tokens the model spent thinking before it answered. Billed at the output rate but
+    # never seen in the text, so a caller reading only output_text_tokens undercounts the
+    # cost of a reasoning model -- sometimes by a multiple. Included in completion_tokens
+    # where the provider reports it separately (Gemini), so the flat figure stays the
+    # billed figure; this field is the split, additive like the others.
+    output_reasoning_tokens: int | None = None
 
 
 @dataclass(kw_only=True)
@@ -88,6 +95,11 @@ class MediaResult(ModelResult):
     # The provider's own timestamp for the generation -- better evidence than the local
     # clock for anything time-ordered, since it does not depend on this machine's.
     created: int | None = None
+    # The provider's own handle for what it produced, when it keeps one -- for Veo, the
+    # file URI a later call can extend. Not a download link for the caller: this package
+    # has already fetched the bytes into `data`. It exists because some providers can only
+    # build on output THEY made and still hold, so the handle is the input to a next call.
+    source_uri: str | None = None
 
     # Response fields this package does not model, carried verbatim.
     #
@@ -156,6 +168,143 @@ class ImageOptions:
             self.size, self.quality, self.input_fidelity,
             self.background, self.output_format, self.output_compression,
         ))
+
+
+# --------------------------------------------------------------------------- #
+# Video request types. Provider-neutral: what a video request is made of, before any
+# service has looked at it. Validation against a service and model lives in video.py.
+# --------------------------------------------------------------------------- #
+
+# The roles an input can play in a video request. An image means different things in
+# video -- where the clip starts, where it ends, or who must stay recognisable -- so each
+# has a name, and a positional list would make "which one is the first frame" an
+# ordering convention that is easy to get backwards and impossible to notice.
+FIRST_FRAME = "first_frame"
+LAST_FRAME = "last_frame"
+REFERENCES = "references"
+EXTEND = "extend"
+VIDEO_ROLES = (FIRST_FRAME, LAST_FRAME, REFERENCES, EXTEND)
+
+# The containers sniff_video_mime() recognises, and so the ones a bytes VideoInput may be.
+SUPPORTED_VIDEO_MIMES = frozenset({"video/mp4", "video/quicktime", "video/webm"})
+
+
+@dataclass(frozen=True, kw_only=True)
+class VideoInput:
+    """A video supplied WITH a request -- for now, the clip to extend.
+
+    Exactly one of two forms. `data` (+ `mime_type`) is the bytes themselves. `uri` is a
+    provider-side handle to a video that provider already holds: Veo extends only videos
+    it generated, referenced on its side, so for Veo the handle is the only form that can
+    work. Which forms a service accepts is on its ProviderSpec (`video_input_forms`).
+
+    Frozen and kw_only for the same reasons as ImageInput."""
+
+    data: bytes | None = None
+    mime_type: str | None = None
+    uri: str | None = None
+    name: str | None = None
+
+    @property
+    def form(self) -> str:
+        """"bytes" or "uri" -- the form this input takes, as ProviderSpec names them."""
+        return "uri" if self.uri is not None else "bytes"
+
+    @classmethod
+    def from_bytes(cls, data: bytes, *, name: str | None = None,
+                   mime_type: str | None = None) -> VideoInput:
+        return cls(data=data, mime_type=mime_type or sniff_video_mime(data), name=name)
+
+    @classmethod
+    def from_result(cls, result: MediaResult) -> VideoInput:
+        """The handle to a video a provider produced, for a call that builds on it.
+
+        Raises when the result carries no handle. Falling back to its bytes would send a
+        request the providers that need a handle cannot honour -- the failure would just
+        arrive later, from the provider, worded less usefully."""
+        if not result.source_uri:
+            raise ValueError(
+                "This result carries no provider handle (source_uri), so nothing can "
+                "build on it by reference. Extension needs a video the same service "
+                "produced and still holds."
+            )
+        return cls(uri=result.source_uri)
+
+
+@dataclass(frozen=True, kw_only=True)
+class VideoInputs:
+    """Everything supplied with a video request, by role. Empty means text-to-video."""
+
+    first_frame: ImageInput | None = None
+    last_frame: ImageInput | None = None
+    references: tuple[ImageInput, ...] = ()
+    extend: VideoInput | None = None
+
+    def roles(self) -> tuple[str, ...]:
+        """The roles actually supplied, in VIDEO_ROLES order."""
+        present = {
+            FIRST_FRAME: self.first_frame is not None,
+            LAST_FRAME: self.last_frame is not None,
+            REFERENCES: bool(self.references),
+            EXTEND: self.extend is not None,
+        }
+        return tuple(role for role in VIDEO_ROLES if present[role])
+
+
+@dataclass(frozen=True, kw_only=True)
+class VideoOptions:
+    """Output settings for one video generation.
+
+    None means NOT REQUESTED: the key is omitted from the provider call, so the
+    provider's own default applies -- the same rule as ImageOptions. A setting that a
+    model constraint forces to a single value is filled in when left None (there is no
+    other value it could be, so nothing is being chosen for the caller); one set to
+    anything else is refused."""
+
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    duration_seconds: int | None = None
+    negative_prompt: str | None = None
+    seed: int | None = None
+    person_generation: str | None = None
+    generate_audio: bool | None = None
+
+    def __bool__(self) -> bool:
+        return any(getattr(self, name) is not None for name in VIDEO_SETTINGS)
+
+    def requested(self) -> dict[str, Any]:
+        """The settings that were set, by name -- the shape a trace records."""
+        return {
+            name: getattr(self, name)
+            for name in VIDEO_SETTINGS if getattr(self, name) is not None
+        }
+
+
+# The VideoOptions field names, which are also the setting names a catalog constraint
+# may `require`. One tuple, so the two can never disagree.
+VIDEO_SETTINGS = (
+    "aspect_ratio", "resolution", "duration_seconds", "negative_prompt", "seed",
+    "person_generation", "generate_audio",
+)
+
+
+def sniff_video_mime(data: bytes, default: str = "application/octet-stream") -> str:
+    """Magic bytes -> MIME for the video containers providers return.
+
+    MP4 and QuickTime are both ISO base media files: a 4-byte box size, then `ftyp` at
+    OFFSET 4 -- the same trap as WEBP's tag at offset 8, where a prefix match on the first
+    bytes would never see it. The brand after `ftyp` tells the two apart. WebM starts with
+    the EBML magic number (Matroska shares it; providers that return Matroska call it
+    WebM, and the container is the same).
+
+    The default is deliberately not a video type, for the image sniffer's reason: an
+    unrecognised blob should be refused by validation with a clear message, not sent to a
+    provider under a guessed label."""
+    if data[4:8] == b"ftyp":
+        return "video/quicktime" if data[8:12] == b"qt  " else "video/mp4"
+    if data[:4] == b"\x1a\x45\xdf\xa3":
+        return "video/webm"
+    return default
 
 
 # Deliberately strict: a size is WIDTHxHEIGHT and a ratio is W:H. Anything else is not

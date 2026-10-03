@@ -68,6 +68,69 @@ The trace record carries the produced settings and the requested ones side by si
 separate keys. That separation is what makes a divergence detectable at all: one record
 showing 16:9 asked for and 1:1 delivered is worth more than either figure alone.
 
+### A video job gets two records, not one
+
+Video generation is submit-then-poll on every provider this targets, and takes seconds to
+minutes. `submit_video()` therefore returns a `VideoJob` at once, and the caller chooses how
+to wait: poll from a UI, block in a script with `wait()`, or store `job.to_ref()` and resume
+from another process after a restart. `generate_video()` is `submit_video().wait()`, for
+scripts.
+
+A blocking call inside one `_run()` was considered and rejected. It holds a thread for up
+to six minutes per video, and a server restart mid-wait loses a job that has already been
+paid for unless someone digs its id out of a log. A handle holds nothing between polls,
+and its reference survives the process.
+
+That breaks "one record per call", honestly: a job has two observable moments separated
+by an unknown gap. So it gets two records, joined by the operation id:
+
+- **submit**, written by `_run()` like any call: the request, what a constraint filled in
+  (kept apart from what was asked for), and the operation id;
+- **terminal**, written once, the first time anything observes the job finished: the
+  outcome, the video as an artifact, and latency measured as wall clock from submission
+  to *observation* -- an upper bound by at most one poll interval, labelled
+  `latency_kind: "observed"` so nobody reads it as the provider's own time.
+
+A submit record with no terminal record is, on its own, a list of jobs that were paid for
+and never collected. Polls are not traced: thirty identical records for a five-minute job
+would bury the two that matter.
+
+Three rules that look like details and are not:
+
+- **A timeout is not a failure.** `wait()` running out raises `VideoTimeoutError` carrying
+  the job's reference and writes *no* terminal record, because the job has not ended. It
+  is still running, still billed, and can be resumed.
+- **Polling is not retrying.** §13 rules out retries because they duplicate spend. A poll
+  reads a job that already exists and costs nothing. A poll that fails is raised and the
+  job stays pollable; one the provider no longer knows raises `VideoJobNotFoundError`,
+  because retrying that is pointless.
+- **The trace protocol does not change.** Job fields travel inside `request["job"]`.
+  Adding keywords to `TraceSink.llm_call()` would break every third-party sink written
+  against its exact signature, and a test holds a sink with no `**kwargs` to that.
+
+Each record carries its own payloads as files beside the trace, never inline: the frames
+and clips sent go with the submit record, named by role, and the video with the terminal
+one. That has to be rendered explicitly for every input type, because records are
+serialised with `default=str` -- an input object nobody rendered would be written as its
+repr, bytes and all. A test reads the raw JSONL to hold that line.
+`JsonlTraceLogger(video_artifacts=False)` keeps the records and drops the files, for an
+application that already stores its own videos.
+
+The library serializes a job (`VideoJobRef.to_dict()`); the application stores it. Owning
+persistence would mean owning a database, threads and shared state, none of which belong in
+a client library. The provider seam is three methods -- `_submit_video`, `_poll_video`,
+`_fetch_video` -- so the base class owns the clock, finalization and both records, and a
+second video provider arrives fully instrumented, which is why `_run()` exists at all.
+
+`gemini-native` is the first provider behind that seam, through Veo. Two of its mappings
+are judgement calls. A safety refusal arrives as a *finished* operation with no video and a
+list of reasons, not as an error, so it is reported as `filtered` with those reasons
+rather than as a bare failure; a finished operation with neither a video nor a reason is a
+failure that says exactly that. And the provider maps every input role it is given,
+including the two the built-in catalog keeps switched off for Veo until they are verified
+live: a model the catalog does not describe is passed through (§6), and a role that passed
+validation and was then left out of the request would be a silent drop.
+
 ## 2. Observability is never load-bearing
 
 A tracer that raises is caught, logged at WARNING, and swallowed. A full disk must not
@@ -92,7 +155,10 @@ Where several providers speak the same wire protocol, the shared half lives in a
 intermediate base and the leaves carry only a `SPEC`. Three services use the OpenAI
 chat-completions dialect through the same SDK — OpenRouter, OpenAI directly, and Gemini's
 compatibility endpoint — so `OpenAICompatibleClient` holds the request and response
-handling and each leaf is about a dozen lines. The two Ollama clients share a base the
+handling and each leaf is about a dozen lines. Gemini also has a native provider,
+`gemini-native`, on Google's own SDK. It is a separate service with its own `_invoke()`,
+because it speaks a different protocol, and the compatibility route stays exactly as it
+was: the test is protocol, and the same vendor on two protocols is two providers. The two Ollama clients share a base the
 same way. The test is protocol, not vendor: a provider gets its own `_invoke()` when it
 speaks differently, not when it bills differently.
 
@@ -172,7 +238,9 @@ Which models exist, what they cost, whether they accept images, whether they tol
 `temperature` parameter — none of that changes when this package changes. It changes when
 a vendor ships. So it lives in `models.json`, loaded through `importlib.resources` (not
 `__file__` path arithmetic, so it works from a wheel or a zipapp), and a user catalog
-merges over the built-in one by model id.
+merges over the built-in one by model id. Within one file, an id may appear only once: a
+repeat fails the load rather than letting the later entry silently replace the earlier,
+which is the substitution §7 refuses everywhere else.
 
 The concrete case: some current Anthropic models **removed** sampling parameters and
 return a 400 rather than a warning if you send `temperature`. The prototype carried a
@@ -192,8 +260,68 @@ The general shape worth keeping: when providers differ in a way that is **data**
 a flag, an endpoint), put it in data. Reserve code for differences in **behaviour**.
 
 The catalog is **descriptive, not enforcing**. Calling an unlisted model works fine.
-Nothing here gates a request — it exists so a UI can populate a dropdown and so provider
-code can read a flag instead of hardcoding a list.
+It exists so a UI can populate a dropdown and so provider code can read a flag instead of
+hardcoding a list. The one exception is below, and it is narrower than it looks.
+
+### Enforced when stated
+
+Video needed something to refuse against. "Refuse, never substitute" (§7) says a model
+that cannot do 4K must not be quietly given 1080p, and Veo 3.1 and Veo 3.1 Lite differ in
+exactly that way — per model, not per provider. So a model's catalog entry can carry a
+`video` block, and **what it states is enforced before the network**. What it does not
+state is not assumed: a model with no block gets only the structural checks (types, and an
+end frame needing a start frame), and the provider judges the rest.
+
+That keeps the property that matters. A model released after this package ships still
+works, untouched, until someone describes it. It is the same rule `supports_sampling`
+already follows — authoritative when stated, fallback otherwise — applied to more fields.
+
+The block's constraint table has three verbs and a fixed trigger vocabulary:
+
+```json
+{"when": "references",       "require": {"duration_seconds": 8, "aspect_ratio": "16:9"}},
+{"when": "references",       "exclude_input": ["first_frame", "last_frame"]},
+{"when": "last_frame",       "require_input": "first_frame"},
+{"when": "resolution:1080p", "require": {"duration_seconds": 8}}
+```
+
+Each row is a vendor limit that will change on the vendor's schedule, which is why it is
+data. Each reads as one sentence in the error it produces. It is a lookup table, not a rule
+engine: a limit that needs logic the table cannot express is the signal for code, not for
+growing the vocabulary.
+
+Three decisions inside it:
+
+- **A forced setting is filled when unset, refused when set otherwise.** If references
+  require 8 seconds and the caller named no duration, 8 is sent. That is not a choice made
+  for the caller — there is no other value that works — and it is the same move as
+  `aspect_ratio` resolving to a concrete size. A caller who asked for 4 seconds is refused,
+  not overridden.
+- **The exclusion's message names both ways out.** The Veo row above came from a live
+  probe, and Veo's own rejection of that combination is a generic 400 ("Unsupported video
+  generation request") that does not say what conflicted. Here, the library's refusal is
+  strictly more useful than the provider's — which is the strongest argument for checking
+  client-side at all.
+- **Unknown vocabulary is warned and skipped, not raised.** The catalog tolerates fields
+  from a newer version of this package, so an unknown verb cannot fail the load. But a
+  skipped row is a rule not enforced, so it is never silent. Malformed data in a known
+  field — a duration that is not a whole number — does raise, naming the model: a catalog
+  that loads but enforces the wrong thing is worse than one that fails to load.
+
+`resolve_video_request()` runs the same check without a client or a credential, so a UI
+can grey out a combination before offering it and get the answer a real call would.
+
+One layer sits under the model's, and it is about the API rather than the model. The Gemini
+API has no `seed` and no `generate_audio` for any Veo model (Google's enterprise route has
+both), and google-genai raises on them with a message that names neither this service nor
+the remedy. So a `ProviderSpec` can state `video_settings`, the settings its API can carry
+at all. A setting outside that set is refused before the catalog is consulted. The other
+choice was to drop it quietly on the way out, which is substitution by omission, so that
+was never on the table. It is checked a second time on what will actually be sent, because
+a catalog row can force a setting the caller never mentioned, and a forced setting the
+service cannot carry must fail loudly rather than vanish. `None`, the default, means no
+restriction is known, and a provider written against this package keeps passing
+everything through.
 
 ### Listing is filtered; calling is not
 
@@ -501,10 +629,27 @@ set with the vocabularies documented beside it:
 | Anthropic | `end_turn` | `max_tokens`, `refusal` |
 | Ollama | `stop` | `length` |
 | HuggingFace / TGI | `stop`, `eos_token` | `length` |
+| Gemini (native) | `STOP` | `MAX_TOKENS`, `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `IMAGE_SAFETY`, `LANGUAGE`, `OTHER`, `prompt_blocked` |
 
 `tool_use`, `tool_calls` and `stop_sequence` are normal completions and are intentionally
 absent. `error` is OpenRouter failing mid-stream: it returns the partial text it had with
 no usage block, so this finish reason is the *only* signal that the answer is cut short.
+
+Gemini adds two cases worth knowing about, because both look like silence rather than an
+error:
+
+- **`prompt_blocked` is not a Gemini value.** When Gemini refuses the *prompt*, no
+  candidate comes back at all, only `prompt_feedback.block_reason`. The provider reports
+  that as `prompt_blocked` with empty text, so the empty-response warning names a reason
+  instead of `None`, and logs the block reason itself, which is the difference between
+  "rephrase" and "this will never be answered".
+- **Thinking spends the output cap.** Reasoning models draw their thinking from
+  `max_output_tokens`, so a low cap can be exhausted before any answer is written:
+  `MAX_TOKENS` with empty text. The warning fires correctly; the fix is a larger cap.
+
+Gemini's finish reasons arrive as an enum whose `str()` is `"FinishReason.STOP"`, not
+`"STOP"`. The provider reports the enum's value. Passing the enum through would have made
+this whole table inert for Gemini: the lower-cased comparison would never match.
 
 ## 13. What is deliberately not here
 
@@ -558,3 +703,14 @@ turn every routing miss into a failure.
 The `huggingface-hub` 2.0.0 bump taught this. It changed the shape of one refusal, the
 translation in §11 stopped firing for text, and the live test was the only thing that
 noticed.
+
+There is a middle tier between the fake and the live call, and `gemini-native` video uses
+it: a real `google.genai.Client` with only its HTTP transport replaced. The SDK builds the
+request body, parses the operation and works out the download path itself, so the test
+sees what would go over the wire, with no credential and no cost. It is how the suite knows
+that the file is fetched by id through the configured endpoint, whatever host the response
+names, and it carries a tripwire. A test asserts that the SDK still refuses `seed` and
+`generate_audio` for this API, so the day Google adds them that test fails and says to
+widen the spec's `video_settings`. It skips without the extra, like any SDK-backed test.
+Video live tests are opt-in on top of `-m live` (`GEMINI_LIVE_VIDEO=1`), because each clip
+is billed per second.

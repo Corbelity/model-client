@@ -71,6 +71,20 @@ class ModelConfig:
     # so ("hf",) and ("huggingface",) mean the same thing.
     services: tuple[str, ...] | None = None
 
+    # Video jobs. Used only by VideoJob.wait() and generate_video(): a single poll() is
+    # one status request whatever these say. Fixed-interval polling rather than backoff,
+    # because the job is the slow part and polling more slowly only lengthens the tail.
+    # The timeout is generous because Google documents Veo jobs at up to six minutes, and
+    # a timeout is not a failure anyway: the job keeps running and can be resumed.
+    video_poll_interval_s: float = 10.0
+    video_wait_timeout_s: float = 600.0
+
+    def __post_init__(self) -> None:
+        for name in ("video_poll_interval_s", "video_wait_timeout_s"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
+                raise ValueError(f"{name} must be a positive number of seconds (got {value!r}).")
+
     def with_overrides(self, **changes: object) -> ModelConfig:
         """A derived config. Thin wrapper over dataclasses.replace, kept because it reads
         better at call sites and keeps `replace` out of application imports."""
@@ -117,6 +131,8 @@ class ModelConfig:
             if name.strip()
         ) or None
         max_tokens = _int("CORBELITY_MAX_TOKENS", cls.default_max_tokens)
+        poll_interval = _float("CORBELITY_VIDEO_POLL_INTERVAL", cls.video_poll_interval_s)
+        wait_timeout = _float("CORBELITY_VIDEO_WAIT_TIMEOUT", cls.video_wait_timeout_s)
         temperature = _float("CORBELITY_TEMPERATURE", cls.default_temperature)
 
         return cls(
@@ -132,6 +148,12 @@ class ModelConfig:
             num_ctx=_int("CORBELITY_NUM_CTX", cls.num_ctx),
             catalog_path=Path(catalog) if catalog else None,
             services=services,
+            video_poll_interval_s=(
+                poll_interval if poll_interval is not None else cls.video_poll_interval_s
+            ),
+            video_wait_timeout_s=(
+                wait_timeout if wait_timeout is not None else cls.video_wait_timeout_s
+            ),
         )
 
 

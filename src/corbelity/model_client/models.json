@@ -44,9 +44,17 @@
     {
         "id": "gemini-3.8-flash",
         "name": "Gemini 3.8 Flash",
+        "service": "gemini-native",
+        "modality": "text",
+        "description": "Gemini via Google's own SDK (google-genai).",
+        "accepts_images": true
+    },
+    {
+        "id": "gemini-3.5-flash-lite",
+        "name": "Gemini 3.5 Flash-Lite (compatibility endpoint)",
         "service": "gemini",
         "modality": "text",
-        "description": "Gemini via Google's OpenAI-compatibility endpoint.",
+        "description": "Gemini via Google's OpenAI-compatibility endpoint -- the route for code already on the OpenAI libraries.",
         "accepts_images": true
     },
     {

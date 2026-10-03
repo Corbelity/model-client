@@ -18,6 +18,10 @@ explicitly, so a minor bump is worth reading before you take it.
   same contract as every other provider. A separate service from `gemini`, which is
   unchanged. Aliases `google-genai` and `gemini-genai`; endpoint override
   `GEMINI_NATIVE_BASE_URL`.
+- `gemini-3.5-flash-lite` in the built-in catalog under `gemini`, as a worked example of
+  the compatibility route alongside the native one. Each route has its own model, because
+  a model id is both the catalog's key and the name sent to the API, so one id cannot
+  appear twice.
 - `ModelResult.output_reasoning_tokens`: tokens a model spent thinking. Billed at the
   output rate but never in the text, so a cost computed from `output_text_tokens` alone
   undercounts a reasoning model. Recorded in the trace's `usage` block.
@@ -30,6 +34,15 @@ explicitly, so a minor bump is worth reading before you take it.
   Each now logs a warning, as a truncated answer already did.
 - `available_services()` reports `gemini-native` alongside `gemini` when
   `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set, since one key serves both.
+- **`gemini-3.8-flash` now names `gemini-native` in the built-in catalog.** Anything that
+  builds its client from a catalog entry (a model picker, `make_model_client(entry.service,
+  ...)`) now reaches it through Google's own SDK, and needs the `[gemini-native]` extra
+  installed; `[all]` already includes it. Code that names `gemini` explicitly is
+  unaffected and still reaches the compatibility shim. A user catalog that sets
+  `"service": "gemini"` on an entry keeps overriding the built-in one, as before. One
+  knock-on for allow-lists: `ModelConfig(services=("gemini",))` no longer lists
+  `gemini-3.8-flash`, only the compatibility example below; name `gemini-native` as well
+  (or use `available_services()`, which reports both for one key).
 
 ## [0.3.0] - 2026-09-30
 

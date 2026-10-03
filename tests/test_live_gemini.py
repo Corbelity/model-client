@@ -1,15 +1,18 @@
-"""Live calls to the native Gemini provider. Excluded by default; run with `pytest -m live`.
+"""Live calls to both Gemini routes. Excluded by default; run with `pytest -m live`.
 
 The hermetic suite proves the request matches the SDK's types and that the parser reads
 responses the SDK builds. It cannot prove the API still answers that request the way the
-parser expects. These do, cheaply: three short text calls.
+parser expects. These do, cheaply: three short calls on `gemini-native`, and one on the
+`gemini` compatibility shim so the catalog's example of that route is known to work.
 
-    GEMINI_API_KEY=... uv run pytest -m live tests/test_live_gemini.py
+    GEMINI_API_KEY=... uv run --extra gemini-native --extra gemini \
+        pytest -m live tests/test_live_gemini.py -rs
 
-Run after any `google-genai` bump. The model is overridable because availability moves on
-Google's schedule, not this package's:
+Run after any `google-genai` or `openai` bump. Each route skips on its own if its extra is
+missing. The models are overridable because availability moves on Google's schedule:
 
-    GEMINI_LIVE_MODEL (default: the catalog's Gemini text model)
+    GEMINI_LIVE_MODEL         (default: the catalog's gemini-native text model)
+    GEMINI_LIVE_COMPAT_MODEL  (default: the catalog's gemini text model)
 
 Skip vs fail follows the rule in DESIGN.md §14: a missing extra, a missing key, or a quota
 or region refusal is an environment state and skips; anything else -- including a
@@ -34,26 +37,42 @@ from corbelity.model_client import (
 pytestmark = pytest.mark.live
 
 
-def _default_model() -> str:
+def _default_model(service: str, fallback: str) -> str:
     for entry in builtin_catalog():
-        if entry.service in ("gemini", "gemini-native") and entry.modality == "text":
+        if entry.service == service and entry.modality == "text":
             return entry.id
-    return "gemini-3.8-flash"
+    return fallback
 
 
-MODEL = os.getenv("GEMINI_LIVE_MODEL") or _default_model()
+MODEL = os.getenv("GEMINI_LIVE_MODEL") or _default_model("gemini-native", "gemini-3.8-flash")
+COMPAT_MODEL = (
+    os.getenv("GEMINI_LIVE_COMPAT_MODEL") or _default_model("gemini", "gemini-3.5-flash-lite")
+)
 
 
-@pytest.fixture(autouse=True)
-def _requirements() -> None:
+def _require_key(service: str) -> None:
+    names = get_spec(service).key_env
+    if not any(os.getenv(name, "").strip() for name in names):
+        pytest.skip(f"no Gemini credential: set one of {', '.join(names)}")
+
+
+@pytest.fixture
+def native() -> None:
     pytest.importorskip(
         "google.genai",
         reason='gemini-native extra not installed: pip install '
                '"corbelity-model-client[gemini-native]"',
     )
-    names = get_spec("gemini-native").key_env
-    if not any(os.getenv(name, "").strip() for name in names):
-        pytest.skip(f"no Gemini credential: set one of {', '.join(names)}")
+    _require_key("gemini-native")
+
+
+@pytest.fixture
+def compat() -> None:
+    pytest.importorskip(
+        "openai",
+        reason='gemini extra not installed: pip install "corbelity-model-client[gemini]"',
+    )
+    _require_key("gemini")
 
 
 def quota_is_a_skip[R](call: Callable[[], R]) -> R:
@@ -85,6 +104,7 @@ def red_png(size: int = 16) -> bytes:
     )
 
 
+@pytest.mark.usefixtures("native")
 def test_text_round_trip_and_usage() -> None:
     client = make_model_client("gemini-native", model=MODEL, max_tokens=1024)
     text = quota_is_a_skip(lambda: client.complete(
@@ -102,6 +122,7 @@ def test_text_round_trip_and_usage() -> None:
     assert result.completion_tokens >= result.output_text_tokens
 
 
+@pytest.mark.usefixtures("native")
 def test_history_reaches_the_model() -> None:
     client = make_model_client("gemini-native", model=MODEL, max_tokens=1024)
     text = quota_is_a_skip(lambda: client.complete(
@@ -115,6 +136,7 @@ def test_history_reaches_the_model() -> None:
     assert "corbel" in text.lower()
 
 
+@pytest.mark.usefixtures("native")
 def test_image_attachment_is_seen() -> None:
     client = make_model_client("gemini-native", model=MODEL, max_tokens=1024)
     text = quota_is_a_skip(lambda: client.complete(
@@ -127,3 +149,22 @@ def test_image_attachment_is_seen() -> None:
     assert result is not None
     # The image was counted as image input, so the modality split is being read.
     assert result.input_image_tokens is None or result.input_image_tokens > 0
+
+
+@pytest.mark.usefixtures("compat")
+def test_compatibility_shim_round_trip() -> None:
+    """The catalog's example of the compatibility route really works through it.
+
+    The OpenAI SDK raises its own error types, so a quota refusal is recognised by the
+    status code it carries rather than by importing the SDK's exception classes."""
+    client = make_model_client("gemini", model=COMPAT_MODEL, max_tokens=1024)
+    try:
+        text = client.complete("Answer with a single word.", "What is the capital of France?")
+    except Exception as err:
+        if getattr(err, "status_code", None) == 429:
+            pytest.skip(f"Gemini account refused the call (429): {type(err).__name__}")
+        raise
+    assert "paris" in text.lower()
+    # The chat-completions dialect's vocabulary, lower-case: not the native enum.
+    assert client.finish_reason == "stop"
+    assert isinstance(client.prompt_tokens, int) and client.prompt_tokens > 0

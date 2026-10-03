@@ -25,8 +25,12 @@ from corbelity.model_client import (
     MissingCredentialsError,
     ModelConfig,
     available_services,
+    builtin_catalog,
+    catalog_for,
+    client_class,
     get_spec,
     known_services,
+    load_catalog,
     resolve_service,
     supported_modalities,
 )
@@ -138,6 +142,78 @@ class TestRegistration:
 
     def test_one_key_makes_both_available(self) -> None:
         assert available_services(env={"GEMINI_API_KEY": "k"}) == ("gemini", "gemini-native")
+
+
+# --------------------------------------------------------------------------- #
+# The catalog routes Gemini models to gemini-native (Option A)
+# --------------------------------------------------------------------------- #
+class TestCatalogRouting:
+    """The built-in catalog lists both Gemini routes, each under its own model id: the
+    flagship model on gemini-native, and a second model on the compatibility shim to show
+    that route. Routing follows the service name passed, never the catalog, so naming
+    `gemini` explicitly reaches the shim for any model."""
+
+    def test_builtin_gemini_models_name_gemini_native(self) -> None:
+        native = builtin_catalog().for_service("gemini-native")
+        assert native, "the built-in catalog should list at least one native Gemini model"
+        assert all(entry.modality in supported_modalities("gemini-native") for entry in native)
+
+    def test_the_flagship_model_is_on_the_native_route(self) -> None:
+        entry = builtin_catalog().get("gemini-3.8-flash")
+        assert entry is not None and entry.service == "gemini-native"
+
+    def test_the_shim_has_its_own_example_entry(self) -> None:
+        shim = builtin_catalog().for_service("gemini")
+        assert shim, "the catalog should show the compatibility route with an example"
+        # A different model id from every native entry: ids are the catalog's key AND the
+        # name sent to the API, so sharing one would silently drop an entry.
+        native_ids = {entry.id for entry in builtin_catalog().for_service("gemini-native")}
+        assert not native_ids & {entry.id for entry in shim}
+
+    def test_shipped_catalog_has_no_duplicate_ids(self) -> None:
+        # Read as raw JSON on purpose. ModelCatalog keys by id, so a duplicate would
+        # load without complaint and the earlier entry would simply vanish.
+        from importlib import resources
+
+        raw = json.loads(
+            resources.files("corbelity.model_client").joinpath("models.json")
+            .read_text(encoding="utf-8")
+        )
+        ids = [entry["id"] for entry in raw]
+        duplicates = sorted({model_id for model_id in ids if ids.count(model_id) > 1})
+        assert not duplicates, f"duplicate catalog ids: {duplicates}"
+
+    def test_naming_the_shim_still_routes_to_it(self) -> None:
+        from corbelity.model_client.providers.gemini import GeminiClient
+
+        assert client_class("gemini") is GeminiClient
+        assert client_class("google") is GeminiClient
+        assert client_class("gemini-native") is GeminiNativeClient
+
+    def test_a_gemini_key_lists_the_model_under_gemini_native(self) -> None:
+        services = available_services(env={"GEMINI_API_KEY": "k"})
+        listed = catalog_for(ModelConfig(services=services))
+        entry = listed.get("gemini-3.8-flash")
+        assert entry is not None and entry.service == "gemini-native"
+
+    def test_an_allow_list_naming_only_the_shim_lists_only_the_shims_model(self) -> None:
+        # The behaviour change for an allow-list: ("gemini",) used to show the flagship
+        # model; it now shows only the compatibility example. In CHANGELOG.
+        listed = catalog_for(ModelConfig(services=("gemini",)))
+        assert listed.get("gemini-3.8-flash") is None
+        assert listed.get("gemini-3.5-flash-lite") is not None
+
+    def test_a_gemini_key_lists_both_routes(self) -> None:
+        listed = catalog_for(ModelConfig(services=available_services(env={"GEMINI_API_KEY": "k"})))
+        assert {entry.service for entry in listed} == {"gemini", "gemini-native"}
+
+    def test_a_user_catalog_can_route_it_back_to_the_shim(self, tmp_path: Path) -> None:
+        path = tmp_path / "models.json"
+        path.write_text(json.dumps([
+            {"id": "gemini-3.8-flash", "service": "gemini", "accepts_images": True},
+        ]), encoding="utf-8")
+        entry = load_catalog(path).get("gemini-3.8-flash")
+        assert entry is not None and entry.service == "gemini"
 
 
 # --------------------------------------------------------------------------- #

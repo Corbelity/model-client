@@ -122,6 +122,22 @@ Gemini text working through the chat-completions dialect with no extra dependenc
 text-only and stays exactly as it was, so code written against it keeps working. One key
 serves both services, so `available_services()` reports both when it is set.
 
+The built-in catalog shows both routes, each with its own model:
+
+| Model | Service | Route |
+|---|---|---|
+| `gemini-3.8-flash` | `gemini-native` | Google's own SDK |
+| `gemini-3.5-flash-lite` | `gemini` | OpenAI-compatibility endpoint |
+
+A model id can appear only once in a catalog (it is both the key and the name sent to the
+API), so the same model can't be listed under both. Routing follows the service name you
+pass, never the catalog, so any Gemini model can go either way:
+
+```python
+make_model_client("gemini-native", model="gemini-3.8-flash")   # native SDK
+make_model_client("gemini", model="gemini-3.8-flash")          # compatibility endpoint
+```
+
 ## Usage
 
 ### Text, with history and images

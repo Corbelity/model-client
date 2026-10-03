@@ -35,6 +35,17 @@ explicitly, so a minor bump is worth reading before you take it.
   table (`require`, `require_input`, `exclude_input`). What a block states is enforced
   before the network; a model without one is passed through. See DESIGN.md, "Enforced
   when stated".
+- Video jobs: `submit_video()` returns a `VideoJob` at once; `poll()` asks once, `wait()`
+  polls until done, `result()` returns the video (or raises `VideoNotReadyError` rather
+  than blocking). `job.to_ref()` gives a `VideoJobRef` whose `to_dict()` an application
+  can store, and `resume_video()` picks the job up in any process. `generate_video()` is
+  the blocking form. Each job writes two trace records, submit and terminal, joined by the
+  operation id; polls are not traced. New errors `VideoTimeoutError` (also a
+  `TimeoutError`, and carrying the job's reference, because a timeout is not a failure),
+  `VideoJobFailedError`, `ContentFilteredError` and `VideoJobNotFoundError` (also a
+  `LookupError`). `ModelConfig` gains `video_poll_interval_s` (10) and
+  `video_wait_timeout_s` (600), read from `CORBELITY_VIDEO_POLL_INTERVAL` and
+  `CORBELITY_VIDEO_WAIT_TIMEOUT`. No provider implements the seam yet.
 - `resolve_video_request()`: judges a video request with no client, credential or network
   call, returning the settings a real submission would send or raising what it would
   raise. New errors `UnsupportedVideoSettingError` (a `ValueError`) and

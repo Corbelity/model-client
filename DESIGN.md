@@ -68,6 +68,52 @@ The trace record carries the produced settings and the requested ones side by si
 separate keys. That separation is what makes a divergence detectable at all: one record
 showing 16:9 asked for and 1:1 delivered is worth more than either figure alone.
 
+### A video job gets two records, not one
+
+Video generation is submit-then-poll on every provider this targets, and takes seconds to
+minutes. `submit_video()` therefore returns a `VideoJob` at once, and the caller chooses how
+to wait: poll from a UI, block in a script with `wait()`, or store `job.to_ref()` and resume
+from another process after a restart. `generate_video()` is `submit_video().wait()`, for
+scripts.
+
+A blocking call inside one `_run()` was considered and rejected. It holds a thread for up
+to six minutes per video, and a server restart mid-wait loses a job that has already been
+paid for unless someone digs its id out of a log. A handle holds nothing between polls,
+and its reference survives the process.
+
+That breaks "one record per call", honestly: a job has two observable moments separated
+by an unknown gap. So it gets two records, joined by the operation id:
+
+- **submit**, written by `_run()` like any call: the request, what a constraint filled in
+  (kept apart from what was asked for), and the operation id;
+- **terminal**, written once, the first time anything observes the job finished: the
+  outcome, the video as an artifact, and latency measured as wall clock from submission
+  to *observation* -- an upper bound by at most one poll interval, labelled
+  `latency_kind: "observed"` so nobody reads it as the provider's own time.
+
+A submit record with no terminal record is, on its own, a list of jobs that were paid for
+and never collected. Polls are not traced: thirty identical records for a five-minute job
+would bury the two that matter.
+
+Three rules that look like details and are not:
+
+- **A timeout is not a failure.** `wait()` running out raises `VideoTimeoutError` carrying
+  the job's reference and writes *no* terminal record, because the job has not ended. It
+  is still running, still billed, and can be resumed.
+- **Polling is not retrying.** §13 rules out retries because they duplicate spend. A poll
+  reads a job that already exists and costs nothing. A poll that fails is raised and the
+  job stays pollable; one the provider no longer knows raises `VideoJobNotFoundError`,
+  because retrying that is pointless.
+- **The trace protocol does not change.** Job fields travel inside `request["job"]`.
+  Adding keywords to `TraceSink.llm_call()` would break every third-party sink written
+  against its exact signature, and a test holds a sink with no `**kwargs` to that.
+
+The library serializes a job (`VideoJobRef.to_dict()`); the application stores it. Owning
+persistence would mean owning a database, threads and shared state, none of which belong in
+a client library. The provider seam is three methods -- `_submit_video`, `_poll_video`,
+`_fetch_video` -- so the base class owns the clock, finalization and both records, and a
+second video provider arrives fully instrumented, which is why `_run()` exists at all.
+
 ## 2. Observability is never load-bearing
 
 A tracer that raises is caught, logged at WARNING, and swallowed. A full disk must not

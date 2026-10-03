@@ -47,6 +47,7 @@ from .catalog import (
 from .client import INCOMPLETE_FINISH_REASONS, ModelClient, load_sdk
 from .config import ModelConfig, get_default_config, set_default_config
 from .errors import (
+    ContentFilteredError,
     MissingBaseUrlError,
     MissingCredentialsError,
     MissingDependencyError,
@@ -62,6 +63,10 @@ from .errors import (
     UnsupportedSizeError,
     UnsupportedVideoInputError,
     UnsupportedVideoSettingError,
+    VideoJobFailedError,
+    VideoJobNotFoundError,
+    VideoNotReadyError,
+    VideoTimeoutError,
 )
 from .factory import (
     available_services,
@@ -80,6 +85,7 @@ from .factory import (
     supported_modalities,
     supported_output_formats,
 )
+from .jobs import VideoJob, VideoJobRef, VideoPoll, VideoStatus, VideoSubmission
 from .media import (
     ALPHA_FORMATS,
     COMPRESSIBLE_FORMATS,
@@ -127,6 +133,7 @@ __all__ = [
     "ImageInput",
     "ALPHA_FORMATS",
     "COMPRESSIBLE_FORMATS",
+    "ContentFilteredError",
     "FORMAT_MIMES",
     "ImageOptions",
     "JsonlTraceLogger",
@@ -160,7 +167,16 @@ __all__ = [
     "VideoConstraint",
     "VideoInput",
     "VideoInputs",
+    "VideoJob",
+    "VideoJobFailedError",
+    "VideoJobNotFoundError",
+    "VideoJobRef",
+    "VideoNotReadyError",
     "VideoOptions",
+    "VideoPoll",
+    "VideoStatus",
+    "VideoSubmission",
+    "VideoTimeoutError",
     "__version__",
     "aspect_ratios_of",
     "available_services",

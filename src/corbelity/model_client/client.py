@@ -26,6 +26,7 @@ from collections.abc import Callable, Mapping, Sequence
 from types import ModuleType
 from typing import Any, ClassVar
 
+from . import jobs as _jobs
 from .catalog import load_catalog
 from .config import ModelConfig, get_default_config
 from .errors import (
@@ -41,17 +42,20 @@ from .errors import (
     UnsupportedQualityError,
     UnsupportedSizeError,
 )
+from .jobs import VideoJob, VideoJobRef, VideoPoll, VideoStatus, VideoSubmission
 from .media import (
     ALPHA_FORMATS,
     COMPRESSIBLE_FORMATS,
     IMAGE,
     SOUND,
     TEXT,
+    VIDEO,
     ImageInput,
     ImageOptions,
     LLMResult,
     MediaResult,
     ModelResult,
+    VideoInput,
     VideoInputs,
     VideoOptions,
     aspect_ratios_of,
@@ -285,6 +289,30 @@ class ModelClient[ClientT](ABC):
 
     def _invoke_speech(self, text: str) -> MediaResult:
         raise UnsupportedModalityError(self.SPEC.name, SOUND, self.SPEC.modalities)
+
+    # Video is three seam methods rather than one, because a job has three separate
+    # exchanges with the provider. The cost is a little more for a provider author to
+    # write; the benefit is that the base class owns the poll loop, the clock,
+    # finalization and both trace records, so every video provider is observed alike.
+    # None of the three is defaulted beyond refusing, for the reason _invoke() is not.
+
+    def _submit_video(self, prompt: str, inputs: VideoInputs,
+                      options: VideoOptions) -> str:
+        """Start a generation and return the provider's operation id. `inputs` and
+        `options` are already validated and resolved; a setting left None was not
+        requested and must be omitted from the provider call."""
+        raise UnsupportedModalityError(self.SPEC.name, VIDEO, self.SPEC.modalities)
+
+    def _poll_video(self, operation: str) -> VideoPoll:
+        """One status request. Raise VideoJobNotFoundError when the provider no longer
+        knows the operation; let any other error propagate, so the job stays
+        pollable."""
+        raise UnsupportedModalityError(self.SPEC.name, VIDEO, self.SPEC.modalities)
+
+    def _fetch_video(self, poll: VideoPoll) -> MediaResult:
+        """Download the finished video from a poll that reported success. Set
+        `source_uri` to the provider's handle, if it keeps one."""
+        raise UnsupportedModalityError(self.SPEC.name, VIDEO, self.SPEC.modalities)
 
     # ----------------------------------------------------------------------- #
     # Shared observability wrapper. Every public entry point goes through this, so
@@ -607,6 +635,157 @@ class ModelClient[ClientT](ABC):
         maximum = self.SPEC.max_reference_images
         if maximum is not None and len(images) > maximum:
             raise TooManyImagesError(self.SPEC.name, len(images), maximum)
+
+    def submit_video(self, prompt: str, *,
+                     first_frame: ImageInput | None = None,
+                     last_frame: ImageInput | None = None,
+                     references: Sequence[ImageInput] | None = None,
+                     extend: VideoInput | MediaResult | None = None,
+                     aspect_ratio: str | None = None,
+                     resolution: str | None = None,
+                     duration_seconds: int | None = None,
+                     negative_prompt: str | None = None,
+                     seed: int | None = None,
+                     person_generation: str | None = None,
+                     generate_audio: bool | None = None) -> VideoJob:
+        """Start a video generation and return its job at once.
+
+        Inputs are named by role. `extend` accepts the result of an earlier generation
+        directly. Every setting is validated -- against the service, then against what
+        the catalog states about the model -- before anything is sent, and a setting a
+        model constraint forces is filled in when left unset (see video.py). Refused,
+        never substituted.
+
+        The submission is traced like any other call; the job's outcome is traced again
+        when something first observes it (see jobs.py)."""
+        self._require(VIDEO)
+        inputs = VideoInputs(
+            first_frame=first_frame,
+            last_frame=last_frame,
+            references=tuple(references or ()),
+            extend=VideoInput.from_result(extend) if isinstance(extend, MediaResult) else extend,
+        )
+        asked = VideoOptions(
+            aspect_ratio=aspect_ratio, resolution=resolution,
+            duration_seconds=duration_seconds, negative_prompt=negative_prompt, seed=seed,
+            person_generation=person_generation, generate_audio=generate_audio,
+        )
+        sent = self._resolve_video_request(inputs, asked)
+
+        # Job fields travel inside `request`, not as new TraceSink parameters: adding
+        # keywords to llm_call() would break every third-party sink written against its
+        # exact signature.
+        job: dict[str, Any] = {"phase": "submit", "latency_kind": "round_trip"}
+        request: dict[str, Any] = {"prompt": prompt, "inputs": list(inputs.roles()),
+                                   "job": job}
+        if asked:
+            request["requested"] = asked.requested()
+        if sent != asked:
+            # What a constraint filled in, kept apart from what was asked for, so the
+            # record shows both rather than one pretending to be the other.
+            request["resolved"] = sent.requested()
+
+        submitted_at = _jobs._now()
+
+        def invoke() -> VideoSubmission:
+            operation = self._submit_video(prompt, inputs, sent)
+            # Known only once the provider answers; the record is written after this
+            # returns, so the submit record carries it.
+            job["operation"] = operation
+            return VideoSubmission(operation=operation, finish_reason="submitted")
+
+        submission = self._run(VIDEO, invoke, request)
+        ref = VideoJobRef(
+            service=self.SPEC.name, model=self._model, operation=submission.operation,
+            submitted_at=submitted_at, requested=sent.requested(),
+        )
+        self._logger.info(
+            "Video job submitted %s/%s: operation=%s", self.SPEC.name, self._model,
+            submission.operation,
+        )
+        return VideoJob(self, ref)
+
+    def resume_video(self, ref: VideoJobRef | Mapping[str, Any] | str) -> VideoJob:
+        """Pick up a job submitted earlier -- possibly by another process, before a
+        restart -- from its reference, its `to_dict()` form, or a bare operation id.
+
+        A job belongs to the service and model that ran it, so a reference from a
+        different one is refused rather than polled through the wrong provider."""
+        self._require(VIDEO)
+        if isinstance(ref, str):
+            ref = VideoJobRef(service=self.SPEC.name, model=self._model, operation=ref)
+        elif not isinstance(ref, VideoJobRef):
+            ref = VideoJobRef.from_dict(ref)
+        if ref.service != self.SPEC.name or ref.model != self._model:
+            raise ValueError(
+                f"Video job {ref.operation!r} belongs to {ref.service}/{ref.model}; "
+                f"this client is {self.SPEC.name}/{self._model}. Resume it with a client "
+                "for that service and model."
+            )
+        return VideoJob(self, ref)
+
+    def generate_video(self, prompt: str, *,
+                       first_frame: ImageInput | None = None,
+                       last_frame: ImageInput | None = None,
+                       references: Sequence[ImageInput] | None = None,
+                       extend: VideoInput | MediaResult | None = None,
+                       aspect_ratio: str | None = None,
+                       resolution: str | None = None,
+                       duration_seconds: int | None = None,
+                       negative_prompt: str | None = None,
+                       seed: int | None = None,
+                       person_generation: str | None = None,
+                       generate_audio: bool | None = None,
+                       timeout_s: float | None = None) -> MediaResult:
+        """submit_video(...).wait(timeout_s): the blocking form, for scripts and tests.
+
+        Holds the calling thread until the video is ready. A server should submit and
+        poll instead. On timeout, VideoTimeoutError carries the job's reference: the
+        job is still running and can be resumed."""
+        job = self.submit_video(
+            prompt, first_frame=first_frame, last_frame=last_frame, references=references,
+            extend=extend, aspect_ratio=aspect_ratio, resolution=resolution,
+            duration_seconds=duration_seconds, negative_prompt=negative_prompt, seed=seed,
+            person_generation=person_generation, generate_audio=generate_audio,
+        )
+        return job.wait(timeout_s=timeout_s)
+
+    def _record_video_terminal(self, ref: VideoJobRef, status: VideoStatus,
+                               result: MediaResult | None,
+                               failure: Exception | None) -> None:
+        """The job's second trace record, written once, when its end is first seen.
+
+        Latency is wall clock from submission to OBSERVATION -- an upper bound on how long
+        the provider took, by at most one poll interval -- and says so in latency_kind.
+        Written through the same guarded _trace_call as every record: a tracer that
+        raises cannot turn a finished video into a failed result()."""
+        observed = status.elapsed_s is not None
+        latency_ms = (status.elapsed_s or 0.0) * 1000.0
+        request: dict[str, Any] = {
+            "job": {
+                "phase": "terminal",
+                "operation": ref.operation,
+                "state": status.state,
+                "latency_kind": "observed" if observed else "unknown",
+            },
+            "requested": dict(ref.requested),
+        }
+        if result is not None:
+            self.last_result = result
+            if not result.data:
+                self._logger.warning(
+                    "Video job %s on %s/%s succeeded with an EMPTY payload.",
+                    ref.operation, self.SPEC.name, self._model,
+                )
+        log = self._logger.info if failure is None else self._logger.warning
+        log(
+            "Video job %s/%s %s after %s (operation=%s)", self.SPEC.name, self._model,
+            status.state,
+            f"{status.elapsed_s:.0f}s" if observed else "an unknown time",
+            ref.operation,
+        )
+        self._trace_call(VIDEO, latency_ms, request, result=result,
+                         error=None if failure is None else str(failure))
 
     def _resolve_video_request(self, inputs: VideoInputs,
                                options: VideoOptions) -> VideoOptions:

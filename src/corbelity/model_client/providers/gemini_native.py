@@ -34,7 +34,7 @@ Video is a long-running operation: `_submit_video` starts it and returns its nam
 loop, the clock and the trace records (see jobs.py). Three things about Veo shape them:
 
   * A refusal on safety grounds is not an error. The operation finishes "done" with no
-    video and a list of filter reasons, which is reported as the FILTERED state so the
+    video and a list of filter reasons, which is reported as the filtered state so the
     caller is told why rather than handed "no video".
   * The download goes to the configured endpoint, never to the host named in the
     response. The SDK takes only the file id from the video's URI and fetches it with
@@ -50,7 +50,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from ..catalog import load_catalog
 from ..client import ModelClient, get_field, load_sdk
 from ..errors import ModelClientError, VideoJobNotFoundError
-from ..jobs import FAILED, FILTERED, RUNNING, SUCCEEDED, VideoPoll
+from ..jobs import (
+    VIDEO_FAILED,
+    VIDEO_FILTERED,
+    VIDEO_RUNNING,
+    VIDEO_SUCCEEDED,
+    VideoPoll,
+)
 from ..media import (
     ImageInput,
     LLMResult,
@@ -337,14 +343,15 @@ class GeminiNativeClient(ModelClient["Client"]):
     def _read_operation(self, operation: str, reply: Any) -> VideoPoll:
         if not get_field(reply, "done"):
             # Veo reports no progress figure, so none is invented.
-            return VideoPoll(state=RUNNING)
+            return VideoPoll(state=VIDEO_RUNNING)
 
         error = get_field(reply, "error")
         if error:
             message = get_field(error, "message") or str(error)
             code = get_field(error, "code")
             return VideoPoll(
-                state=FAILED, error=f"{message} (code {code})" if code else str(message)
+                state=VIDEO_FAILED,
+                error=f"{message} (code {code})" if code else str(message),
             )
 
         response = get_field(reply, "response", "result")
@@ -361,7 +368,7 @@ class GeminiNativeClient(ModelClient["Client"]):
                     "Video job %s returned %d videos; keeping the first.",
                     operation, len(videos),
                 )
-            return VideoPoll(state=SUCCEEDED, output=videos[0])
+            return VideoPoll(state=VIDEO_SUCCEEDED, output=videos[0])
 
         reasons = tuple(
             str(reason)
@@ -369,9 +376,9 @@ class GeminiNativeClient(ModelClient["Client"]):
         )
         count = get_field(response, "rai_media_filtered_count")
         if reasons or count:
-            return VideoPoll(state=FILTERED, filtered_reasons=reasons)
+            return VideoPoll(state=VIDEO_FILTERED, filtered_reasons=reasons)
         return VideoPoll(
-            state=FAILED,
+            state=VIDEO_FAILED,
             error="the job finished without a video and gave no reason",
         )
 

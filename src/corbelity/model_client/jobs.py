@@ -52,11 +52,16 @@ _monotonic = time.monotonic
 _sleep = time.sleep
 
 type VideoState = Literal["running", "succeeded", "failed", "filtered"]
-RUNNING: VideoState = "running"
-SUCCEEDED: VideoState = "succeeded"
-FAILED: VideoState = "failed"
-FILTERED: VideoState = "filtered"
-TERMINAL_STATES = frozenset({SUCCEEDED, FAILED, FILTERED})
+
+# Prefixed because these are part of the package's public surface, where a bare
+# SUCCEEDED or TERMINAL_STATES says nothing about what it is a state OF -- the same
+# reason VIDEO_ROLES and SUPPORTED_VIDEO_MIMES are prefixed. The video INPUT ROLES are
+# not, because FIRST_FRAME names itself and VIDEO_ROLES already groups them.
+VIDEO_RUNNING: VideoState = "running"
+VIDEO_SUCCEEDED: VideoState = "succeeded"
+VIDEO_FAILED: VideoState = "failed"
+VIDEO_FILTERED: VideoState = "filtered"
+VIDEO_TERMINAL_STATES = frozenset({VIDEO_SUCCEEDED, VIDEO_FAILED, VIDEO_FILTERED})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -89,7 +94,7 @@ class VideoStatus:
 
     @property
     def done(self) -> bool:
-        return self.state in TERMINAL_STATES
+        return self.state in VIDEO_TERMINAL_STATES
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -266,11 +271,11 @@ class VideoJob:
                 return
             result: MediaResult | None = None
             failure: Exception | None = None
-            if status.state == SUCCEEDED:
+            if status.state == VIDEO_SUCCEEDED:
                 # A failed download is raised and leaves the job unfinalized, so the next
                 # poll tries again: the video is still on the provider's side.
                 result = self._client._fetch_video(report)
-            elif status.state == FILTERED:
+            elif status.state == VIDEO_FILTERED:
                 failure = ContentFilteredError(self._ref, status.filtered_reasons)
             else:
                 failure = VideoJobFailedError(self._ref, status.error or "no detail given")

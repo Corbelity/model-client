@@ -86,12 +86,28 @@ from .factory import (
     supported_modalities,
     supported_output_formats,
 )
-from .jobs import VideoJob, VideoJobRef, VideoPoll, VideoStatus, VideoSubmission
+from .jobs import (
+    VIDEO_FAILED,
+    VIDEO_FILTERED,
+    VIDEO_RUNNING,
+    VIDEO_SUCCEEDED,
+    VIDEO_TERMINAL_STATES,
+    VideoJob,
+    VideoJobRef,
+    VideoPoll,
+    VideoState,
+    VideoStatus,
+    VideoSubmission,
+)
 from .media import (
     ALPHA_FORMATS,
     COMPRESSIBLE_FORMATS,
+    EXTEND,
+    FIRST_FRAME,
     FORMAT_MIMES,
     IMAGE,
+    LAST_FRAME,
+    REFERENCES,
     SOUND,
     SUPPORTED_IMAGE_MIMES,
     SUPPORTED_VIDEO_MIMES,
@@ -119,17 +135,26 @@ from .messages import History, Message, validate_history
 from .registry import ProviderSpec, get_spec, register_provider
 from .trace import JsonlTraceLogger, NullTrace, TraceSink, make_trace_logger, trace_file_path
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
+    "EXTEND",
+    "FIRST_FRAME",
     "IMAGE",
     "INCOMPLETE_FINISH_REASONS",
+    "LAST_FRAME",
+    "REFERENCES",
     "SOUND",
     "SUPPORTED_IMAGE_MIMES",
     "SUPPORTED_VIDEO_MIMES",
     "TEXT",
     "VIDEO",
+    "VIDEO_FAILED",
+    "VIDEO_FILTERED",
     "VIDEO_ROLES",
+    "VIDEO_RUNNING",
+    "VIDEO_SUCCEEDED",
+    "VIDEO_TERMINAL_STATES",
     "History",
     "ImageInput",
     "ALPHA_FORMATS",
@@ -175,6 +200,7 @@ __all__ = [
     "VideoNotReadyError",
     "VideoOptions",
     "VideoPoll",
+    "VideoState",
     "VideoStatus",
     "VideoSubmission",
     "VideoTimeoutError",

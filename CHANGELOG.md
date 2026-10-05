@@ -11,6 +11,35 @@ explicitly, so a minor bump is worth reading before you take it.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-04
+
+Additive: the video role and job-state constants are now part of the public API. Nothing
+existing changes.
+
+### Added
+
+- The **video input role names** are exported: `FIRST_FRAME`, `LAST_FRAME`, `REFERENCES`
+  and `EXTEND`. `VIDEO_ROLES` already was, but its members were not, so an application
+  naming a role had to write the string.
+- The **video job states** are exported, prefixed: `VIDEO_RUNNING`, `VIDEO_SUCCEEDED`,
+  `VIDEO_FAILED`, `VIDEO_FILTERED` and `VIDEO_TERMINAL_STATES`, along with the
+  `VideoState` type alias. Previously a caller polling a job could reach `status.done`
+  but had nothing to compare `status.state` against except a literal, and importing from
+  `corbelity.model_client.jobs` means reaching past the public surface.
+
+  Prefixed because a bare `SUCCEEDED` or `TERMINAL_STATES` at package level says nothing
+  about what it is a state *of* — the same reason `VIDEO_ROLES` and
+  `SUPPORTED_VIDEO_MIMES` are. The role names are not prefixed: `FIRST_FRAME` names
+  itself, and `VIDEO_ROLES` already groups them.
+
+### Changed
+
+- **Internal rename, not a breaking change:** `jobs.RUNNING`, `SUCCEEDED`, `FAILED`,
+  `FILTERED` and `TERMINAL_STATES` became the `VIDEO_`-prefixed names above. They were
+  never exported from the package, so nothing importing `corbelity.model_client` is
+  affected. Code reaching into `corbelity.model_client.jobs` directly must update —
+  which is now unnecessary, since the names are published.
+
 ## [0.4.0] - 2026-10-03
 
 Gemini through Google's own SDK, and video generation, starting with Veo. Two changes

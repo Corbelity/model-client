@@ -375,6 +375,23 @@ video = job.wait(timeout_s=600)   # or poll until done
 Path("clip.mp4").write_bytes(video.data)
 ```
 
+**Branch on a state by name, not by string.** `status.done` answers the common question,
+and the states themselves are exported for the rest:
+
+```python
+from corbelity.model_client import VIDEO_FILTERED, VIDEO_SUCCEEDED, VIDEO_TERMINAL_STATES
+
+while status.state not in VIDEO_TERMINAL_STATES:
+    status = job.poll()
+if status.state == VIDEO_SUCCEEDED:
+    ...
+elif status.state == VIDEO_FILTERED:
+    print("refused:", ", ".join(status.filtered_reasons))
+```
+
+The input role names — `FIRST_FRAME`, `LAST_FRAME`, `REFERENCES`, `EXTEND` — are exported
+too, alongside the `VIDEO_ROLES` tuple that orders them.
+
 `generate_video(...)` is submit-then-wait in one call, for scripts. In a server, submit
 and poll instead, so no thread is held for minutes.
 

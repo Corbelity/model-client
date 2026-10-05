@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from corbelity import model_client
 from corbelity.model_client import (
     VIDEO,
     ContentFilteredError,
@@ -31,6 +32,7 @@ from corbelity.model_client import (
     VideoNotReadyError,
     VideoOptions,
     VideoPoll,
+    VideoStatus,
     VideoTimeoutError,
 )
 from corbelity.model_client import jobs as jobs_module
@@ -457,3 +459,61 @@ def test_config_reads_the_video_settings_from_the_environment() -> None:
     assert (config.video_poll_interval_s, config.video_wait_timeout_s) == (2.5, 90)
     with pytest.raises(ValueError, match="positive"):
         ModelConfig(video_poll_interval_s=0)
+
+
+# --------------------------------------------------------------------------- #
+# The names the package publishes
+# --------------------------------------------------------------------------- #
+# These exist so an application can branch on a job's state, or name a video input role,
+# without writing the string literal and hoping it still matches. That only holds if the
+# exported name, the module it comes from and the behaviour all agree -- which is what
+# this asserts. Reaching into corbelity.model_client.jobs instead would be worse than a
+# literal, so the package root is the surface under test.
+class TestThePublishedNames:
+
+    ROLE_NAMES = ("FIRST_FRAME", "LAST_FRAME", "REFERENCES", "EXTEND")
+    STATE_NAMES = ("VIDEO_RUNNING", "VIDEO_SUCCEEDED", "VIDEO_FAILED", "VIDEO_FILTERED")
+
+    @pytest.mark.parametrize("name", [*ROLE_NAMES, *STATE_NAMES,
+                                      "VIDEO_TERMINAL_STATES", "VideoState"])
+    def test_each_name_is_exported(self, name: str) -> None:
+        assert hasattr(model_client, name), f"{name} is not importable from the package"
+        assert name in model_client.__all__, f"{name} is importable but not in __all__"
+
+    def test_every_name_in_all_actually_exists(self) -> None:
+        """A name in __all__ that nothing defines breaks `import *`, and tells a reader
+        the package offers something it does not."""
+        assert [n for n in model_client.__all__ if not hasattr(model_client, n)] == []
+
+    def test_the_roles_are_exactly_what_video_roles_holds(self) -> None:
+        """VIDEO_ROLES was already exported and its members were not, so the tuple and the
+        individual names could drift apart. In order, because a catalog constraint's
+        `when` is matched against it."""
+        named = tuple(getattr(model_client, name) for name in self.ROLE_NAMES)
+        assert named == model_client.VIDEO_ROLES
+
+    def test_the_states_agree_with_the_status_that_reports_them(self) -> None:
+        """The behavioural anchor, and the reason the constants are worth exporting at
+        all. A state re-spelled without VideoStatus.done following would make
+        `state in VIDEO_TERMINAL_STATES` and `status.done` disagree -- and an application
+        polling on the first would wait for ever."""
+        assert VideoStatus(state=model_client.VIDEO_RUNNING, elapsed_s=None).done is False
+        for state in model_client.VIDEO_TERMINAL_STATES:
+            assert VideoStatus(state=state, elapsed_s=None).done is True
+
+    def test_terminal_states_is_every_state_except_running(self) -> None:
+        every = {getattr(model_client, name) for name in self.STATE_NAMES}
+        assert every - {model_client.VIDEO_RUNNING} == model_client.VIDEO_TERMINAL_STATES
+
+    def test_the_exported_names_are_the_module_s_own(self) -> None:
+        """Re-exported, not copied -- a copy is what falls out of step."""
+        for name in (*self.STATE_NAMES, "VIDEO_TERMINAL_STATES"):
+            assert getattr(model_client, name) is getattr(jobs_module, name)
+
+    def test_a_state_name_is_accepted_where_a_literal_was(self) -> None:
+        """What the exports are for: the published names are the values a VideoPoll
+        actually carries, so a provider or an application can use them in place of a
+        string."""
+        carried = {VideoPoll(state=getattr(model_client, name)).state
+                   for name in self.STATE_NAMES}
+        assert carried == {model_client.VIDEO_RUNNING, *model_client.VIDEO_TERMINAL_STATES}
